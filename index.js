@@ -111,6 +111,46 @@ app.post("/auth/set-password", async (req, res) => {
 });
 
 /**
+ * CHECK IDENTIDAD (Pre-login WeWeb)
+ * No autentica, solo informa estado de la identidad
+ */
+app.post("/auth/check-identidad", async (req, res) => {
+  try {
+    const { correo, tipoEntidad } = req.body;
+
+    if (!correo || !tipoEntidad) {
+      return res.status(400).json({ error: "correo y tipoEntidad requeridos" });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        c.IdAuth AS HasPassword
+      FROM AUTH_IDENTIDADES i
+      LEFT JOIN AUTH_CREDENCIALES c ON c.IdAuth = i.IdAuth
+      WHERE i.Correo = ?
+        AND i.TipoEntidad = ?
+        AND i.Status = 'ACTIVO'
+      LIMIT 1
+      `,
+      [correo, tipoEntidad]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ exists: false });
+    }
+
+    return res.json({
+      exists: true,
+      hasPassword: !!rows[0].HasPassword
+    });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * ENTRY POINT CLOUD RUN (OBLIGATORIO)
  */
 const PORT = process.env.PORT || 8080;
