@@ -39,7 +39,7 @@ async function sendSetPasswordEmail(to, token) {
         </p>
 
         <p>
-          Si el botón no funciona, copia y pega este enlace en tu navegador:
+          No compartas este correo con nadie. Si el botón no funciona, copia y pega este enlace en tu navegador:
         </p>
 
         <p style="word-break: break-all;">
@@ -64,4 +64,5 @@ async function sendSetPasswordEmail(to, token) {
 
 
 module.exports = { sendSetPasswordEmail };
+
 
