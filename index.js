@@ -5,6 +5,7 @@ const crypto = require("crypto");
 
 const pool = require("./db");
 const { login } = require("./auth");
+const { sendSetPasswordEmail } = require("./mailer"); // ✅ IMPORTANTE
 
 const app = express();
 app.use(express.json());
@@ -87,7 +88,59 @@ app.post("/auth/sync-identidad", async (req, res) => {
 });
 
 /**
- * SET / RESET PASSWORD
+ * RESET PASSWORD
+ * Solicita envío de correo con link
+ */
+app.post("/auth/reset-password", async (req, res) => {
+  try {
+    const { correo, tipoEntidad } = req.body;
+
+    if (!correo || !tipoEntidad) {
+      return res.status(400).json({
+        error: "correo y tipoEntidad requeridos"
+      });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT IdAuth, TipoEntidad, IdEntidad
+      FROM AUTH_IDENTIDADES
+      WHERE Correo = ?
+        AND TipoEntidad = ?
+        AND Status = 'ACTIVO'
+      LIMIT 1
+      `,
+      [correo, tipoEntidad]
+    );
+
+    // 🔐 Seguridad: no revelar si existe o no
+    if (rows.length > 0) {
+      const identity = rows[0];
+
+      const token = jwt.sign(
+        {
+          sub: identity.IdAuth,
+          tipoEntidad: identity.TipoEntidad,
+          idEntidad: identity.IdEntidad
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN }
+      );
+
+      await sendSetPasswordEmail(correo, token);
+    }
+
+    return res.json({ ok: true });
+
+  } catch (e) {
+    console.error("reset-password error:", e);
+    return res.status(500).json({ error: "Error procesando solicitud" });
+  }
+});
+
+/**
+ * SET PASSWORD
+ * Usa el token para guardar la contraseña
  */
 app.post("/auth/set-password", async (req, res) => {
   try {
@@ -112,7 +165,6 @@ app.post("/auth/set-password", async (req, res) => {
 
 /**
  * CHECK IDENTIDAD (Pre-login WeWeb)
- * No autentica, solo informa estado de la identidad
  */
 app.post("/auth/check-identidad", async (req, res) => {
   try {
@@ -124,8 +176,7 @@ app.post("/auth/check-identidad", async (req, res) => {
 
     const [rows] = await pool.query(
       `
-      SELECT 
-        c.IdAuth AS HasPassword
+      SELECT c.IdAuth AS HasPassword
       FROM AUTH_IDENTIDADES i
       LEFT JOIN AUTH_CREDENCIALES c ON c.IdAuth = i.IdAuth
       WHERE i.Correo = ?
@@ -151,7 +202,7 @@ app.post("/auth/check-identidad", async (req, res) => {
 });
 
 /**
- * ENTRY POINT CLOUD RUN (OBLIGATORIO)
+ * ENTRY POINT CLOUD RUN
  */
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
