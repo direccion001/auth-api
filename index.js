@@ -165,13 +165,16 @@ app.post("/auth/set-password", async (req, res) => {
 
 /**
  * CHECK IDENTIDAD (Pre-login WeWeb)
+ * Contrato seguro: no revela existencia
  */
 app.post("/auth/check-identidad", async (req, res) => {
   try {
     const { correo, tipoEntidad } = req.body;
 
     if (!correo || !tipoEntidad) {
-      return res.status(400).json({ error: "correo y tipoEntidad requeridos" });
+      return res.status(400).json({
+        error: "correo y tipoEntidad requeridos"
+      });
     }
 
     const [rows] = await pool.query(
@@ -187,17 +190,16 @@ app.post("/auth/check-identidad", async (req, res) => {
       [correo, tipoEntidad]
     );
 
-    if (rows.length === 0) {
-      return res.json({ exists: false });
+    // 🔐 Contrato cerrado: solo dos respuestas posibles
+    if (rows.length > 0 && rows[0].HasPassword) {
+      return res.json({ nextStep: "PASSWORD" });
     }
 
-    return res.json({
-      exists: true,
-      hasPassword: !!rows[0].HasPassword
-    });
+    return res.json({ nextStep: "SET_PASSWORD" });
 
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // Respuesta segura por defecto
+    return res.json({ nextStep: "SET_PASSWORD" });
   }
 });
 
@@ -208,3 +210,4 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log("auth-api running on port", PORT);
 });
+
