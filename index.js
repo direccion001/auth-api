@@ -16,12 +16,19 @@ app.use(express.json());
 app.post("/auth/login/alumno", async (req, res) => {
   try {
     const { correo, password } = req.body;
+
+    if (!correo || !password) {
+      return res.json({ ok: false });
+    }
+
     const token = await login(correo, password, "ALUMNO");
-    res.json({ token });
-  } catch (e) {
-    res.status(401).json({ error: e.message });
+    return res.json({ ok: true, token });
+
+  } catch {
+    return res.json({ ok: false });
   }
 });
+
 
 /**
  * LOGIN USUARIO
@@ -29,10 +36,16 @@ app.post("/auth/login/alumno", async (req, res) => {
 app.post("/auth/login/usuario", async (req, res) => {
   try {
     const { correo, password } = req.body;
+
+    if (!correo || !password) {
+      return res.json({ ok: false });
+    }
+
     const token = await login(correo, password, "USUARIO");
-    res.json({ token });
-  } catch (e) {
-    res.status(401).json({ error: e.message });
+    return res.json({ ok: true, token });
+
+  } catch {
+    return res.json({ ok: false });
   }
 });
 
@@ -88,17 +101,18 @@ app.post("/auth/sync-identidad", async (req, res) => {
 });
 
 /**
- * RESET PASSWORD
- * Solicita envío de correo con link
+ * RESET PASSWORD (envia link al correo)
+ * - 200 ok:true → procesado (exista o no el correo)
+ * - 200 ok:false → request inválido
+ * - 500 ok:false → error técnico real
  */
 app.post("/auth/reset-password", async (req, res) => {
   try {
     const { correo, tipoEntidad } = req.body;
 
+    // ❗ Error de UX (no técnico)
     if (!correo || !tipoEntidad) {
-      return res.status(400).json({
-        error: "correo y tipoEntidad requeridos"
-      });
+      return res.json({ ok: false });
     }
 
     const [rows] = await pool.query(
@@ -113,7 +127,7 @@ app.post("/auth/reset-password", async (req, res) => {
       [correo, tipoEntidad]
     );
 
-    // 🔐 Seguridad: no revelar si existe o no
+    // 🔐 No revelar existencia
     if (rows.length > 0) {
       const identity = rows[0];
 
@@ -130,11 +144,13 @@ app.post("/auth/reset-password", async (req, res) => {
       await sendSetPasswordEmail(correo, token);
     }
 
+    // ✅ Siempre OK si el sistema funcionó
     return res.json({ ok: true });
 
-  } catch (e) {
-    console.error("reset-password error:", e);
-    return res.status(500).json({ error: "Error procesando solicitud" });
+  } catch (err) {
+    // ❌ Error técnico real
+    console.error("reset-password technical error:", err);
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -210,4 +226,5 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log("auth-api running on port", PORT);
 });
+
 
