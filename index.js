@@ -3,12 +3,11 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const cors = require("cors");
+const app = express();
 
 const pool = require("./db");
 const { login } = require("./auth");
 const { sendSetPasswordEmail } = require("./mailer"); // ✅ IMPORTANTE
-
-const app = express();
 
 app.use(cors({
   origin: "*",
@@ -16,7 +15,14 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.options("*", cors()); // 👈 CRÍTICO
+app.options("*", cors());
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  next();
+});
 
 app.use(express.json());
 
