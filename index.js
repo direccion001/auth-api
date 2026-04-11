@@ -118,26 +118,50 @@ app.post("/auth/sync-identidad", async (req, res) => {
 });
 
 app.post("/auth/reset-password", async (req, res) => {
+  console.log("🔥 reset-password START");
   try {
     const { correo, tipoEntidad } = req.body;
+    console.log("BODY:", { correo, tipoEntidad });
+
     if (!correo || !tipoEntidad) return res.json({ ok: false });
+
+    console.log("DB QUERY START");
     const [rows] = await pool.query(
       `SELECT IdAuth, TipoEntidad, IdEntidad FROM AUTH_IDENTIDADES WHERE Correo = ? AND TipoEntidad = ? AND Status = 'ACTIVO' LIMIT 1`,
       [correo, tipoEntidad]
     );
+    console.log("DB QUERY RESULT:", rows);
+
     if (rows.length > 0) {
       const identity = rows[0];
+
+      console.log("JWT PAYLOAD:", identity);
+      console.log("JWT CONFIG:", {
+        hasSecret: !!process.env.JWT_SECRET,
+        expiresIn: process.env.JWT_EXPIRES_IN
+      });
+
       const token = jwt.sign(
         { sub: identity.IdAuth, tipoEntidad: identity.TipoEntidad, idEntidad: identity.IdEntidad },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN }
       );
-      await sendSetPasswordEmail(correo, token);
+      console.log("JWT GENERATED OK");
+
+      console.log("EMAIL SEND START");
+      try {
+        await sendSetPasswordEmail(correo, token);
+        console.log("EMAIL SENT OK");
+      } catch (mailErr) {
+        console.error("💥 MAIL ERROR:", mailErr);
+      }
     }
+
     return res.json({ ok: true });
+
   } catch (err) {
-    console.error("reset-password technical error:", err);
-    return res.status(500).json({ ok: false });
+    console.error("💥 RESET PASSWORD FATAL:", err);
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
