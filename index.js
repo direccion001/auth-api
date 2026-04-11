@@ -1,15 +1,50 @@
+console.log("BOOT START");
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err.message, err.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION:", reason);
+  process.exit(1);
+});
+
+process.on("exit", (code) => {
+  console.log("PROCESS EXIT with code:", code);
+});
+
+// Variables críticas (sin exponer valores)
+console.log("ENV CHECK:", {
+  SQL_USER:             !!process.env.SQL_USER,
+  DB_NAME:              !!process.env.DB_NAME,
+  INSTANCE_CONNECTION:  !!process.env.INSTANCE_CONNECTION,
+  SMTP_HOST:            !!process.env.SMTP_HOST,
+  JWT_SECRET:           !!process.env.JWT_SECRET,
+  JWT_EXPIRES_IN:       !!process.env.JWT_EXPIRES_IN,
+});
+
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const cors = require("cors");
+
+console.log("loading db");
+const pool = require("./db");
+console.log("db loaded OK");
+
+console.log("loading auth");
+const { login } = require("./auth");
+console.log("auth loaded OK");
+
+console.log("loading mailer");
+const { sendSetPasswordEmail } = require("./mailer");
+console.log("mailer loaded OK");
+
 const app = express();
 
-const pool = require("./db");
-const { login } = require("./auth");
-const { sendSetPasswordEmail } = require("./mailer");
-
-// 1️⃣ CORS - primero siempre v2
+// 1️⃣ CORS - primero siempre
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
@@ -18,6 +53,11 @@ app.use(cors({
 
 // 2️⃣ Body parser - segundo
 app.use(express.json());
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", ts: new Date().toISOString() });
+});
 
 app.get("/", (req, res) => {
   res.send("OK");
@@ -141,5 +181,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: err.message });
 });
 
+console.log("before listen");
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("auth-api running on port", PORT));
