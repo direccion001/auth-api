@@ -29,6 +29,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const cors = require("cors");
+const { portalReadHandler } = require("./portal");
 
 console.log("loading db");
 const pool = require("./db");
@@ -233,6 +234,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: err.message });
 });
 
+app.get("/portalReadApi/:viewName", (req, res) => {
+  portalReadHandler(req, res, pool);
+});
+
+
 console.log("before listen");
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("auth-api running on port", PORT));
+
