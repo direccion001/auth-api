@@ -228,17 +228,17 @@ app.post("/auth/check-identidad", async (req, res) => {
   }
 });
 
-// 4️⃣ ERROR HANDLER - siempre al final
-app.use((err, req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.status(500).json({ ok: false, error: err.message });
-});
+// Endpoints
 
 app.get("/portalReadApi/:viewName", (req, res) => {
   portalReadHandler(req, res, pool);
 });
 
-
+// 4️⃣ ERROR HANDLER - siempre al final
+app.use((err, req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.status(500).json({ ok: false, error: err.message });
+});
 console.log("before listen");
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("auth-api running on port", PORT));
