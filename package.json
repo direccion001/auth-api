@@ -12,6 +12,7 @@
     "mysql2": "^3.11.0",
     "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
-    "nodemailer": "^6.9.15"
+    "nodemailer": "^6.9.15",
+    "cors": "^2.8.5"
   }
 }
