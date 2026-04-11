@@ -21,6 +21,10 @@ app.use((req, res, next) => {
 // 2️⃣ Body parser - segundo
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
 // 3️⃣ RUTAS
 app.post("/auth/login/alumno", async (req, res) => {
   try {
