@@ -2,12 +2,20 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const cors = require("cors");
 
 const pool = require("./db");
 const { login } = require("./auth");
 const { sendSetPasswordEmail } = require("./mailer"); // ✅ IMPORTANTE
 
 const app = express();
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
 app.use(express.json());
 
 /**
