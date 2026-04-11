@@ -9,7 +9,7 @@ const pool = require("./db");
 const { login } = require("./auth");
 const { sendSetPasswordEmail } = require("./mailer");
 
-// 1️⃣ CORS - primero siempre v1
+// 1️⃣ CORS - primero siempre v2
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
