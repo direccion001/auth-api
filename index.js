@@ -166,17 +166,45 @@ app.post("/auth/reset-password", async (req, res) => {
 });
 
 app.post("/auth/set-password", async (req, res) => {
+  console.log("🔥 SET PASSWORD START");
+  console.log("BODY RAW:", req.body);
+
+  const { token, password } = req.body;
+
+  console.log("TOKEN:", token);
+  console.log("PASSWORD LENGTH:", password ? password.length : null);
+
+  if (!token) {
+    console.log("❌ TOKEN MISSING");
+    return res.status(400).json({ error: "TOKEN MISSING" });
+  }
+
+  console.log("VERIFYING TOKEN...");
+  console.log("JWT SECRET EXISTS:", !!process.env.JWT_SECRET);
+
+  let payload;
   try {
-    const { token, password } = req.body;
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("✅ TOKEN VALID:", payload);
+  } catch (err) {
+    console.error("💥 JWT ERROR:", err.message);
+    return res.status(400).json({ error: "INVALID TOKEN", detail: err.message });
+  }
+
+  try {
+    console.log("HASHING PASSWORD...");
     const hash = await bcrypt.hash(password, 10);
+
     await pool.query(
       `INSERT INTO AUTH_CREDENCIALES (IdAuth, PasswordHash) VALUES (?, ?) ON DUPLICATE KEY UPDATE PasswordHash = VALUES(PasswordHash)`,
       [payload.sub, hash]
     );
+    console.log("PASSWORD SAVED OK");
+
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: "Token inválido o expirado" });
+    console.error("💥 SET PASSWORD FATAL:", e);
+    res.status(500).json({ error: e.message });
   }
 });
 
