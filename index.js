@@ -10,13 +10,11 @@ const { login } = require("./auth");
 const { sendSetPasswordEmail } = require("./mailer");
 
 // 1️⃣ CORS - primero siempre v2
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  next();
-});
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 
 // 2️⃣ Body parser - segundo
 app.use(express.json());
