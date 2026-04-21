@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 
 const { login } = require("../services/auth.service");
-const { sendSetPasswordEmail } = require("../mailers/mailer");
+const { sendEmail } = require("../mailers/mailer");
 
 async function loginAlumno(req, res) {
   try {
@@ -68,60 +68,61 @@ async function syncIdentidad(req, res) {
 
 async function resetPassword(req, res) {
   try {
-    const { correo, tipoEntidad } = req.body;
+    const { correo, tipoEntidad, action } = req.body;
+
     if (!correo || !tipoEntidad) return res.json({ ok: false });
 
     const [rows] = await pool.query(
-      `SELECT IdAuth, TipoEntidad, IdEntidad FROM AUTH_IDENTIDADES WHERE Correo = ? AND TipoEntidad = ? AND Status = 'ACTIVO' LIMIT 1`,
+      `SELECT IdAuth, TipoEntidad, IdEntidad 
+       FROM AUTH_IDENTIDADES 
+       WHERE Correo = ? AND TipoEntidad = ? AND Status = 'ACTIVO' 
+       LIMIT 1`,
       [correo, tipoEntidad]
     );
 
-    if (rows.length > 0) {
-      const identity = rows[0];
-
-      const token = jwt.sign(
-        { sub: identity.IdAuth, tipoEntidad: identity.TipoEntidad, idEntidad: identity.IdEntidad },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN }
-      );
-
-      await sendSetPasswordEmail(correo, token);
+    if (rows.length === 0) {
+      return res.json({ ok: true });
     }
+
+    const identity = rows[0];
+
+    const token = jwt.sign(
+      {
+        sub: identity.IdAuth,
+        tipoEntidad: identity.TipoEntidad,
+        idEntidad: identity.IdEntidad
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    const link = `${process.env.FRONTEND_URL}/set-password?token=${token}`;
+
+    // 🔥 UNA sola lógica basada en action
+    const EMAIL_MAP = {
+      RESET_PASSWORD: {
+        subject: "Restablece tu contraseña",
+        template: "reset-password.html"
+      },
+      SET_PASSWORD: {
+        subject: "Activa tu cuenta",
+        template: "set-password.html"
+      }
+    };
+
+    const config = EMAIL_MAP[action] || EMAIL_MAP.SET_PASSWORD;
+
+    await sendEmail({
+      to: correo,
+      subject: config.subject,
+      templateName: config.template,
+      variables: { LINK: link }
+    });
 
     return res.json({ ok: true });
 
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
-  }
-}
-
-async function setPassword(req, res) {
-  const { token, password } = req.body;
-
-  if (!token) {
-    return res.status(400).json({ error: "TOKEN MISSING" });
-  }
-
-  let payload;
-  try {
-    payload = jwt.verify(token, process.env.JWT_SECRET);
-  } catch (err) {
-    return res.status(400).json({ error: "INVALID TOKEN" });
-  }
-
-  try {
-    const hash = await bcrypt.hash(password, 10);
-
-    await pool.query(
-      `INSERT INTO AUTH_CREDENCIALES (IdAuth, PasswordHash)
-       VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE PasswordHash = VALUES(PasswordHash)`,
-      [payload.sub, hash]
-    );
-
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
 }
 
