@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const pool = require("./db");
+const pool = require("../db/pool");
 
 function signToken(identity) {
   return jwt.sign(

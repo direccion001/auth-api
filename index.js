@@ -34,8 +34,14 @@ const pool = require("./src/db/pool");
 console.log("db loaded OK");
 
 // 🎯 Controllers
+
+console.log("loading authController");
 const authController = require("./src/controllers/auth.controller");
+console.log("authController OK");
+
+console.log("loading portalController");
 const portalController = require("./src/controllers/portal.controller");
+console.log("portalController OK");
 
 const app = express();
 
@@ -78,6 +84,8 @@ app.use((err, req, res, next) => {
 // 🚀 Start server
 console.log("before listen");
 const PORT = process.env.PORT || 8080;
+
+
 
 app.listen(PORT, () => {
   console.log("auth-api running on port", PORT);
