@@ -126,6 +126,47 @@ async function resetPassword(req, res) {
   }
 }
 
+async function setPassword(req, res) {
+  const { token, password } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: "TOKEN MISSING" });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(400).json({ error: "INVALID TOKEN" });
+  }
+
+  try {
+    const hash = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      `INSERT INTO AUTH_CREDENCIALES (IdAuth, PasswordHash)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE PasswordHash = VALUES(PasswordHash)`,
+      [payload.sub, hash]
+    );
+
+    const authToken = jwt.sign(
+      {
+        sub: payload.sub,
+        tipoEntidad: payload.tipoEntidad,
+        idEntidad: payload.idEntidad
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    res.json({ ok: true, token: authToken });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
 async function checkIdentidad(req, res) {
   try {
     const { correo, tipoEntidad } = req.body;
