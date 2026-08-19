@@ -22,6 +22,7 @@ app.get("/", (req, res) => {
 // Rutas
 app.use("/auth", authRouter);
 app.use("/viewer", viewerRouter);
+app.use("/crud", crudRouter);
 
 // 404
 app.use((req, res) => {
