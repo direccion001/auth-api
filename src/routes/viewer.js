@@ -269,4 +269,107 @@ router.get("/prospectos/:id_evaluacion/contactos", async (req, res) => {
   }
 });
 
+// ======================================================
+// GRUPOS
+// ======================================================
+
+router.get("/grupos", async (req, res) => {
+  try {
+    const params = [];
+
+    let sql = `
+      SELECT *
+      FROM vw_company_viewer_grupos
+      WHERE 1 = 1
+    `;
+
+    // PLANTEL: únicamente sus grupos
+    if (!req.auth.acceso_global) {
+      sql += " AND IdPlantel = ?";
+      params.push(req.auth.id_plantel);
+
+    // INTERNO: puede elegir plantel
+    } else if (req.query.id_plantel) {
+      sql += " AND IdPlantel = ?";
+      params.push(req.query.id_plantel);
+    }
+
+    // Filtro opcional de status de grupo
+    if (req.query.status) {
+      sql += " AND StatusGrupo = ?";
+      params.push(req.query.status);
+    }
+
+    sql += " ORDER BY Grupo ASC";
+
+    const [rows] = await pool.query(sql, params);
+
+    return res.json({
+      ok: true,
+      data: rows
+    });
+
+  } catch (error) {
+    console.error("[VIEWER] grupos", error);
+
+    return res.status(500).json({
+      ok: false,
+      code: "ERROR_GRUPOS",
+      message: "No pudimos consultar los grupos."
+    });
+  }
+});
+
+// ======================================================
+// PLANTELES
+// ======================================================
+
+router.get("/planteles", async (req, res) => {
+  try {
+    const params = [];
+
+    let sql = `
+      SELECT *
+      FROM vw_company_viewer_planteles
+      WHERE 1 = 1
+    `;
+
+    // PLANTEL: únicamente puede consultar su propio plantel
+    if (!req.auth.acceso_global) {
+      sql += " AND IdPlantel = ?";
+      params.push(req.auth.id_plantel);
+
+    // INTERNO: puede consultar uno específico o todos
+    } else if (req.query.id_plantel) {
+      sql += " AND IdPlantel = ?";
+      params.push(req.query.id_plantel);
+    }
+
+    if (req.query.status) {
+      sql += " AND StatusPlantel = ?";
+      params.push(req.query.status);
+    }
+
+    sql += " ORDER BY Plantel ASC";
+
+    const [rows] = await pool.query(sql, params);
+
+    return res.json({
+      ok: true,
+      data: rows
+    });
+
+  } catch (error) {
+    console.error("[VIEWER] planteles", error);
+
+    return res.status(500).json({
+      ok: false,
+      code: "ERROR_PLANTELES",
+      message: "No pudimos consultar los planteles."
+    });
+  }
+});
+
+
+
 module.exports = router;
