@@ -1,18 +1,26 @@
 {
   "name": "auth-api",
   "version": "1.0.0",
-  "private": true,
-  "type": "commonjs",
-  "main": "index.js",
+  "description": "Backend API para Company Viewer de Inglés por Resultados",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "mysql2": "^3.11.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^2.4.3",
-    "nodemailer": "^6.9.15",
-    "cors": "^2.8.5"
-  }
+    "mysql2": "^3.14.3",
+    "nodemailer": "^7.0.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "private": true
 }
