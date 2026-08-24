@@ -43,54 +43,60 @@ router.get("/asistencias", async (req, res) => {
     const params = [];
 
     const comentarioClaseSelect = req.auth.acceso_global
-  ? "ComentarioClase"
-  : "NULL AS ComentarioClase";
+      ? "ComentarioClase"
+      : "NULL AS ComentarioClase";
 
-let sql = `
-  SELECT
-    IdDetalle,
-    IdAsistenciaInterno,
-    IdAsistencia,
-    IdAlumno,
-    Fecha,
-    UsuarioApp,
-    Sustitucion,
-    ${comentarioClaseSelect},
-    ComentarioAlumno,
-    Nombre,
-    NombreAlumno,
-    ApellidosAlumno,
-    StatusAlumno,
-    FechaRegistroAlumno,
-    FechaBajaAlumno,
-    Presente,
-    Justificada,
-    IdGrupo,
-    IdPlantel,
-    Grupo,
-    StatusGrupo,
-    Modalidad,
-    TipoGrupo,
-    ClasePrivada,
-    DiasClase,
-    HoraInicio,
-    HoraFin,
-    IdMaestroTitular,
-    Titular,
-    IdMaestroQueDioClase,
-    Maestro,
-    IdCurso,
-    Curso,
-    ColorCurso,
-    Cap,
-    Pagina,
-    Duracion,
-    Plantel,
-    CorreoCliente,
-    LogoUrl
-  FROM vw_detalle_asistencias_completo_renovado
-  WHERE 1 = 1
-`;
+    let sql = `
+      SELECT
+        IdDetalle,
+        IdAsistenciaInterno,
+        IdAsistencia,
+        IdAlumno,
+        Fecha,
+        UsuarioApp,
+        Sustitucion,
+        ${comentarioClaseSelect},
+        ComentarioAlumno,
+        (
+          SELECT d.TituloComentario
+          FROM DETALLE_ASISTENCIAS d
+          WHERE d.IdDetalle = v.IdDetalle
+          LIMIT 1
+        ) AS TituloComentario,
+        Nombre,
+        NombreAlumno,
+        ApellidosAlumno,
+        StatusAlumno,
+        FechaRegistroAlumno,
+        FechaBajaAlumno,
+        Presente,
+        Justificada,
+        IdGrupo,
+        IdPlantel,
+        Grupo,
+        StatusGrupo,
+        Modalidad,
+        TipoGrupo,
+        ClasePrivada,
+        DiasClase,
+        HoraInicio,
+        HoraFin,
+        IdMaestroTitular,
+        Titular,
+        IdMaestroQueDioClase,
+        Maestro,
+        IdCurso,
+        Curso,
+        ColorCurso,
+        Cap,
+        Pagina,
+        Duracion,
+        Plantel,
+        CorreoCliente,
+        LogoUrl
+      FROM vw_detalle_asistencias_completo_renovado v
+      WHERE 1 = 1
+    `;
 
     sql = filtroPlantel(req, sql, params);
 
@@ -283,18 +289,14 @@ router.get("/grupos", async (req, res) => {
       WHERE 1 = 1
     `;
 
-    // PLANTEL: únicamente sus grupos
     if (!req.auth.acceso_global) {
       sql += " AND IdPlantel = ?";
       params.push(req.auth.id_plantel);
-
-    // INTERNO: puede elegir plantel
     } else if (req.query.id_plantel) {
       sql += " AND IdPlantel = ?";
       params.push(req.query.id_plantel);
     }
 
-    // Filtro opcional de status de grupo
     if (req.query.status) {
       sql += " AND StatusGrupo = ?";
       params.push(req.query.status);
@@ -334,12 +336,9 @@ router.get("/planteles", async (req, res) => {
       WHERE 1 = 1
     `;
 
-    // PLANTEL: únicamente puede consultar su propio plantel
     if (!req.auth.acceso_global) {
       sql += " AND IdPlantel = ?";
       params.push(req.auth.id_plantel);
-
-    // INTERNO: puede consultar uno específico o todos
     } else if (req.query.id_plantel) {
       sql += " AND IdPlantel = ?";
       params.push(req.query.id_plantel);
@@ -369,7 +368,5 @@ router.get("/planteles", async (req, res) => {
     });
   }
 });
-
-
 
 module.exports = router;
