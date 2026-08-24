@@ -38,12 +38,20 @@ function normalizarTexto(valor) {
 }
 
 function validarTitulo(intencion, esOtro, titulo) {
-  if (!titulo) return true;
+  if (!titulo) return !esOtro;
   if (esOtro) return true;
   return TITULOS[intencion]?.includes(titulo) ?? false;
 }
 
 router.patch("/:idDetalle", async (req, res) => {
+  if (!req.auth.modulos.includes("asistencias")) {
+    return res.status(403).json({
+      ok: false,
+      code: "MODULO_NO_AUTORIZADO",
+      message: "No tienes acceso a este módulo."
+    });
+  }
+
   const idDetalle = String(req.params.idDetalle || "").trim();
   const intencion = String(req.body?.intencion || "").trim().toLowerCase();
   const esOtro = Boolean(req.body?.es_otro);
@@ -70,15 +78,9 @@ router.patch("/:idDetalle", async (req, res) => {
     return res.status(400).json({
       ok: false,
       code: "TITULO_INVALIDO",
-      message: "Selecciona un motivo válido para este estado."
-    });
-  }
-
-  if (comentario && !tituloComentario) {
-    return res.status(400).json({
-      ok: false,
-      code: "TITULO_REQUERIDO_PARA_COMENTARIO",
-      message: "Selecciona o escribe un título antes de agregar un comentario."
+      message: esOtro
+        ? "Escribe el motivo personalizado."
+        : "Selecciona un motivo válido para este estado."
     });
   }
 
@@ -184,7 +186,7 @@ router.patch("/:idDetalle", async (req, res) => {
     try {
       await connection.rollback();
     } catch {
-      // No-op: preserve original error.
+      // Conserva el error original.
     }
 
     console.error("[CRUD DETALLE ASISTENCIAS] Error actualizando", {
