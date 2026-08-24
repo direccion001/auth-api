@@ -24,7 +24,7 @@ const TITULOS = {
     "Otro"
   ],
   asistio: [
-    "Repuesta mediante clase privada",
+    "Reposición de clase",
     "Otro"
   ],
   falto: [
