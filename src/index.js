@@ -5,6 +5,7 @@ require("dotenv").config();
 const authRouter = require("./routes/auth");
 const viewerRouter = require("./routes/viewer");
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
+const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const crudRouter = require("./routes/crud");
 
 const app = express();
@@ -23,6 +24,7 @@ app.get("/", (req, res) => {
 // Rutas
 app.use("/auth", authRouter);
 app.use("/viewer/seguimientos", seguimientosViewerRouter);
+app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer", viewerRouter);
 app.use("/crud", crudRouter);
 
