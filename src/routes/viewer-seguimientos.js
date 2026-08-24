@@ -16,7 +16,6 @@ function permitirSeguimientos(req, res) {
     });
     return false;
   }
-
   return true;
 }
 
@@ -32,36 +31,25 @@ function agregarSeguimientoPropio(row, req) {
 
 function alcancePlantel(req, alias, params) {
   if (req.auth.acceso_global) return "";
-
   params.push(req.auth.id_plantel);
   return ` AND ${alias}.IdPlantel = ?`;
 }
-
-// ======================================================
-// GET /viewer/seguimientos
-// Todos los tickets permitidos por el alcance del usuario.
-// Por ahora solo INTERNO tiene el permiso "seguimientos".
-// ======================================================
 
 router.get("/", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
 
   try {
     const params = [];
-
     let sql = `
       SELECT *
       FROM vw_company_viewer_alumnos_seguimiento s
       WHERE 1 = 1
     `;
 
-    // No es un filtro del frontend: es el alcance de seguridad preparado
-    // para el día que PLANTEL pueda consultar este módulo.
     sql += alcancePlantel(req, "s", params);
     sql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
 
     const [rows] = await pool.query(sql, params);
-
     return res.json({
       ok: true,
       data: rows.map((row) => agregarSeguimientoPropio(row, req))
@@ -72,7 +60,6 @@ router.get("/", async (req, res) => {
       message: error?.message,
       code: error?.code
     });
-
     return res.status(500).json({
       ok: false,
       code: "ERROR_CONSULTANDO_SEGUIMIENTOS",
@@ -81,16 +68,12 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ======================================================
-// GET /viewer/seguimientos/alumno/:id_alumno
-// Cabeceras/tickets del alumno. No descarga timelines.
-// ======================================================
-
+// Devuelve ficha actual del alumno + cabeceras de sus tickets.
+// La ficha existe aunque el alumno todavía no tenga seguimientos.
 router.get("/alumno/:id_alumno", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
 
   const idAlumno = String(req.params.id_alumno || "").trim();
-
   if (!idAlumno) {
     return res.status(400).json({
       ok: false,
@@ -100,22 +83,41 @@ router.get("/alumno/:id_alumno", async (req, res) => {
   }
 
   try {
-    const params = [idAlumno];
+    const alumnoParams = [idAlumno];
+    let alumnoSql = `
+      SELECT *
+      FROM vw_company_viewer_alumnos a
+      WHERE a.IdAlumno = ?
+    `;
+    alumnoSql += alcancePlantel(req, "a", alumnoParams);
+    alumnoSql += " LIMIT 1";
 
-    let sql = `
+    const [alumnos] = await pool.query(alumnoSql, alumnoParams);
+    if (!alumnos.length) {
+      return res.status(404).json({
+        ok: false,
+        code: "ALUMNO_NO_ENCONTRADO",
+        message: "No encontramos ese alumno."
+      });
+    }
+
+    const seguimientoParams = [idAlumno];
+    let seguimientoSql = `
       SELECT *
       FROM vw_company_viewer_alumnos_seguimiento s
       WHERE s.IdAlumno = ?
     `;
+    seguimientoSql += alcancePlantel(req, "s", seguimientoParams);
+    seguimientoSql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
 
-    sql += alcancePlantel(req, "s", params);
-    sql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
-
-    const [rows] = await pool.query(sql, params);
+    const [seguimientos] = await pool.query(seguimientoSql, seguimientoParams);
 
     return res.json({
       ok: true,
-      data: rows.map((row) => agregarSeguimientoPropio(row, req))
+      data: {
+        alumno: alumnos[0],
+        seguimientos: seguimientos.map((row) => agregarSeguimientoPropio(row, req))
+      }
     });
   } catch (error) {
     console.error("[VIEWER SEGUIMIENTOS] Error consultando alumno", {
@@ -124,7 +126,6 @@ router.get("/alumno/:id_alumno", async (req, res) => {
       message: error?.message,
       code: error?.code
     });
-
     return res.status(500).json({
       ok: false,
       code: "ERROR_CONSULTANDO_SEGUIMIENTOS_ALUMNO",
@@ -133,16 +134,10 @@ router.get("/alumno/:id_alumno", async (req, res) => {
   }
 });
 
-// ======================================================
-// GET /viewer/seguimientos/:id_seguimiento/detalles
-// Timeline de un ticket específico.
-// ======================================================
-
 router.get("/:id_seguimiento/detalles", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
 
   const idSeguimiento = String(req.params.id_seguimiento || "").trim();
-
   if (!idSeguimiento) {
     return res.status(400).json({
       ok: false,
@@ -153,18 +148,15 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
 
   try {
     const accesoParams = [idSeguimiento];
-
     let accesoSql = `
       SELECT s.id_seguimiento
       FROM vw_company_viewer_alumnos_seguimiento s
       WHERE s.id_seguimiento = ?
     `;
-
     accesoSql += alcancePlantel(req, "s", accesoParams);
     accesoSql += " LIMIT 1";
 
     const [seguimientos] = await pool.query(accesoSql, accesoParams);
-
     if (!seguimientos.length) {
       return res.status(404).json({
         ok: false,
@@ -173,20 +165,22 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
       });
     }
 
-    const [rows] = await pool.query(
-      `
+    const detalleParams = [idSeguimiento];
+    let detalleSql = `
       SELECT *
       FROM vw_company_viewer_alumnos_seguimiento_detalle
       WHERE id_seguimiento = ?
-      ORDER BY FechaRegistro DESC, id_detalle DESC
-      `,
-      [idSeguimiento]
-    );
+    `;
 
-    return res.json({
-      ok: true,
-      data: rows
-    });
+    if (req.auth.tipo_usuario === "PLANTEL") {
+      detalleSql += " AND VisibleCliente = 1";
+    }
+
+    detalleSql += " ORDER BY FechaRegistro DESC, id_detalle DESC";
+
+    const [rows] = await pool.query(detalleSql, detalleParams);
+
+    return res.json({ ok: true, data: rows });
   } catch (error) {
     console.error("[VIEWER SEGUIMIENTOS] Error consultando detalles", {
       id_seguimiento: idSeguimiento,
@@ -194,7 +188,6 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
       message: error?.message,
       code: error?.code
     });
-
     return res.status(500).json({
       ok: false,
       code: "ERROR_CONSULTANDO_DETALLES_SEGUIMIENTO",
