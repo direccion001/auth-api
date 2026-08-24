@@ -9,6 +9,7 @@ module.exports = {
     "asistencias",
     "calificaciones",
     "prospectos",
+    "seguimientos",
     "dashboard"
   ],
 
@@ -16,6 +17,7 @@ module.exports = {
     "asistencias",
     "calificaciones",
     "prospectos",
+    "seguimientos",
     "dashboard"
   ]
 };
