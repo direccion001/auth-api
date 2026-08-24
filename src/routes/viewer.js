@@ -247,7 +247,7 @@ router.get("/prospectos/:id_evaluacion/contactos", async (req, res) => {
         ON e.id_evaluacion = c.id_evaluacion
 
       LEFT JOIN USUARIOS u
-        ON u.`ID Usuario` = c.id_usuario
+        ON u.\`ID Usuario\` = c.id_usuario
 
       WHERE c.id_evaluacion = ?
     `;
