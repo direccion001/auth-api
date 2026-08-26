@@ -58,7 +58,7 @@ async function requireAuth(req, res, next) {
         FROM USUARIOS
         WHERE \`ID Usuario\` = ?
           AND Status = 'Activo'
-          AND Rol IN ('Administrador', 'Directivo')
+          AND Rol IN ('Admin', 'Directivo')
         LIMIT 1
         `,
         [payload.id_usuario]
