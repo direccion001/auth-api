@@ -129,7 +129,7 @@ async function buscarCuentaPorCorreo(correo) {
       password_hash
     FROM USUARIOS
     WHERE LOWER(TRIM(Correo)) = ?
-      AND Rol IN ('Administrador', 'Directivo')
+      AND Rol IN ('Admin', 'Directivo')
       AND Status = 'Activo'
     LIMIT 1
     `,
@@ -343,7 +343,7 @@ router.post("/establecer-password", async (req, res) => {
         FROM USUARIOS
         WHERE token_temporal_hash = ?
           AND token_tipo = 'ACTIVACION'
-          AND Rol IN ('Administrador', 'Directivo')
+          AND Rol IN ('Admin', 'Directivo')
           AND Status = 'Activo'
         LIMIT 1
         `,
@@ -673,7 +673,7 @@ router.post("/restablecer-password", async (req, res) => {
         FROM USUARIOS
         WHERE token_temporal_hash = ?
           AND token_tipo = 'RESET'
-          AND Rol IN ('Administrador', 'Directivo')
+          AND Rol IN ('Admin', 'Directivo')
           AND Status = 'Activo'
         LIMIT 1
         `,
