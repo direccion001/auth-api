@@ -210,15 +210,17 @@ router.get("/prospectos", async (req, res) => {
 
 // ======================================================
 // CONTACTOS DE PROSPECTO
+// Relación oficial: Examenes_Evaluacion.id_appsheet
+//                    contactos_examenes_evaluacion.id_appsheet
 // ======================================================
 
-router.get("/prospectos/:id_evaluacion/contactos", async (req, res) => {
+router.get("/prospectos/:id_appsheet/contactos", async (req, res) => {
   if (!permitir(req, res, "prospectos")) return;
 
   try {
-    const idEvaluacion = Number(req.params.id_evaluacion);
+    const idAppsheet = String(req.params.id_appsheet || "").trim();
 
-    if (!Number.isInteger(idEvaluacion) || idEvaluacion <= 0) {
+    if (!idAppsheet || idAppsheet.length > 40) {
       return res.status(400).json({
         ok: false,
         code: "PROSPECTO_INVALIDO",
@@ -226,11 +228,12 @@ router.get("/prospectos/:id_evaluacion/contactos", async (req, res) => {
       });
     }
 
-    const params = [idEvaluacion];
+    const params = [idAppsheet];
 
     let sql = `
       SELECT
         c.id_contacto,
+        c.id_appsheet,
         c.id_evaluacion,
         c.id_usuario,
         c.fecha_hora_contacto,
@@ -244,12 +247,12 @@ router.get("/prospectos/:id_evaluacion/contactos", async (req, res) => {
       FROM contactos_examenes_evaluacion c
 
       INNER JOIN Examenes_Evaluacion e
-        ON e.id_evaluacion = c.id_evaluacion
+        ON e.id_appsheet = c.id_appsheet
 
       LEFT JOIN USUARIOS u
         ON u.\`ID Usuario\` = c.id_usuario
 
-      WHERE c.id_evaluacion = ?
+      WHERE c.id_appsheet = ?
     `;
 
     if (!req.auth.acceso_global) {
