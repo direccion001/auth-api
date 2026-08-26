@@ -250,7 +250,7 @@ router.get("/prospectos/:id_appsheet/contactos", async (req, res) => {
         ON e.id_appsheet = c.id_appsheet
 
       LEFT JOIN USUARIOS u
-        ON u.\`ID Usuario\` = c.id_usuario
+        ON u.`ID Usuario` = c.id_usuario
 
       WHERE c.id_appsheet = ?
     `;
@@ -370,6 +370,102 @@ router.get("/planteles", async (req, res) => {
       ok: false,
       code: "ERROR_PLANTELES",
       message: "No pudimos consultar los planteles."
+    });
+  }
+});
+
+// ======================================================
+// CURSOS
+// Catálogo reutilizable para formularios del viewer.
+// ======================================================
+
+router.get("/cursos", async (req, res) => {
+  try {
+    const params = [];
+    const status = String(req.query.status || "Activo").trim();
+
+    let sql = `
+      SELECT
+        \`ID CURSO\` AS IdCurso,
+        Nombre AS Curso,
+        Color AS ColorCurso,
+        Status AS StatusCurso
+      FROM CURSOS
+      WHERE 1 = 1
+    `;
+
+    if (status) {
+      sql += " AND Status = ?";
+      params.push(status);
+    }
+
+    sql += " ORDER BY Nombre ASC";
+
+    const [rows] = await pool.query(sql, params);
+
+    return res.json({
+      ok: true,
+      data: rows
+    });
+  } catch (error) {
+    console.error("[VIEWER] cursos", error);
+
+    return res.status(500).json({
+      ok: false,
+      code: "ERROR_CURSOS",
+      message: "No pudimos consultar los cursos."
+    });
+  }
+});
+
+// ======================================================
+// GRADUACIONES
+// ======================================================
+
+router.get("/graduaciones", async (req, res) => {
+  if (!permitir(req, res, "graduaciones")) return;
+
+  try {
+    const params = [];
+
+    let sql = `
+      SELECT *
+      FROM vw_company_viewer_graduaciones
+      WHERE 1 = 1
+    `;
+
+    sql = filtroPlantel(req, sql, params);
+
+    if (req.query.id_grupo) {
+      sql += " AND IdGrupo = ?";
+      params.push(req.query.id_grupo);
+    }
+
+    if (req.query.status) {
+      sql += " AND StatusGraduacion = ?";
+      params.push(req.query.status);
+    }
+
+    if (req.query.status_curso) {
+      sql += " AND StatusCurso = ?";
+      params.push(req.query.status_curso);
+    }
+
+    sql += " ORDER BY FechaCursoFinProgramada ASC, Grupo ASC";
+
+    const [rows] = await pool.query(sql, params);
+
+    return res.json({
+      ok: true,
+      data: rows
+    });
+  } catch (error) {
+    console.error("[VIEWER] graduaciones", error);
+
+    return res.status(500).json({
+      ok: false,
+      code: "ERROR_GRADUACIONES",
+      message: "No pudimos consultar las graduaciones."
     });
   }
 });
