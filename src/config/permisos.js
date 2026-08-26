@@ -5,11 +5,12 @@ module.exports = {
     "prospectos"
   ],
 
-  Administrador: [
+  Admin: [
     "asistencias",
     "calificaciones",
     "prospectos",
     "seguimientos",
+    "graduaciones",
     "dashboard"
   ],
 
@@ -18,6 +19,7 @@ module.exports = {
     "calificaciones",
     "prospectos",
     "seguimientos",
+    "graduaciones",
     "dashboard"
   ]
 };
