@@ -9,27 +9,28 @@ const router = express.Router();
 router.use(requireAuth, requireInterno);
 
 router.get("/", async (req, res) => {
-  if (!req.auth.modulos.includes("seguimientos")) {
-    return res.status(403).json({
-      ok: false,
-      code: "MODULO_NO_AUTORIZADO",
-      message: "No tienes acceso al módulo de seguimientos."
-    });
-  }
-
   try {
-    const [rows] = await pool.query(
-      `
+    const params = [];
+
+    let sql = `
       SELECT
         \`ID Usuario\` AS IdUsuario,
         CONCAT_WS(' ', Nombre, Apellidos) AS Nombre,
         Rol
       FROM USUARIOS
       WHERE Status = 'Activo'
-        AND Rol IN ('Administrador', 'Directivo')
-      ORDER BY Nombre ASC, Apellidos ASC
-      `
-    );
+    `;
+
+    const rol = String(req.query?.rol || "").trim();
+
+    if (rol) {
+      sql += " AND Rol = ?";
+      params.push(rol);
+    }
+
+    sql += " ORDER BY Nombre ASC, Apellidos ASC";
+
+    const [rows] = await pool.query(sql, params);
 
     return res.json({
       ok: true,
@@ -38,6 +39,7 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("[VIEWER USUARIOS INTERNOS] Error consultando", {
       id_usuario: req.auth?.id_usuario,
+      rol: req.query?.rol || null,
       message: error?.message,
       code: error?.code
     });
@@ -45,7 +47,7 @@ router.get("/", async (req, res) => {
     return res.status(500).json({
       ok: false,
       code: "ERROR_CONSULTANDO_USUARIOS_INTERNOS",
-      message: "No pudimos consultar los responsables disponibles."
+      message: "No pudimos consultar los usuarios internos disponibles."
     });
   }
 });
