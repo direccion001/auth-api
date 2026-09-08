@@ -236,6 +236,7 @@ router.get("/prospectos/:id_appsheet/contactos", async (req, res) => {
         c.id_appsheet,
         c.id_evaluacion,
         c.id_usuario,
+        c.es_plantel,
         c.fecha_hora_contacto,
         c.forma_contacto,
         c.resultado_contacto,
@@ -250,7 +251,7 @@ router.get("/prospectos/:id_appsheet/contactos", async (req, res) => {
         ON e.id_appsheet = c.id_appsheet
 
       LEFT JOIN USUARIOS u
-        ON u.`ID Usuario` = c.id_usuario
+        ON u.\`ID Usuario\` = c.id_usuario
 
       WHERE c.id_appsheet = ?
     `;

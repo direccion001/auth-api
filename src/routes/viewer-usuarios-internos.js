@@ -19,11 +19,20 @@ router.get("/", async (req, res) => {
         Rol
       FROM USUARIOS
       WHERE Status = 'Activo'
+        AND Rol IN ('Administrador', 'Directivo')
     `;
 
     const rol = String(req.query?.rol || "").trim();
 
     if (rol) {
+      if (!['Administrador', 'Directivo'].includes(rol)) {
+        return res.status(400).json({
+          ok: false,
+          code: "ROL_NO_PERMITIDO",
+          message: "Solo pueden seleccionarse Administradores o Directivos."
+        });
+      }
+
       sql += " AND Rol = ?";
       params.push(rol);
     }
