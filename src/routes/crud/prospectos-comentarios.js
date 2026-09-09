@@ -17,6 +17,10 @@ function normalizarTexto(valor) {
   return texto || null;
 }
 
+function esInterno(req) {
+  return String(req.auth?.tipo_usuario || "").toUpperCase() === "INTERNO";
+}
+
 async function buscarPorIdAppsheet(idAppsheet, req) {
   const params = [idAppsheet];
   let sql = `
@@ -43,12 +47,9 @@ function negarComentariosPlantel(res) {
   });
 }
 
-// POST /crud/prospectos
-// El CRUD base crea el registro. Si un interno envía comentarios, interceptamos
-// la respuesta exitosa para persistirlos antes de devolver el prospecto creado.
 router.post("/", async (req, res, next) => {
   if (!tiene(req.body, "comentarios")) return next();
-  if (!req.auth.acceso_global) return negarComentariosPlantel(res);
+  if (!esInterno(req)) return negarComentariosPlantel(res);
 
   const comentarios = normalizarTexto(req.body.comentarios);
   delete req.body.comentarios;
@@ -97,10 +98,9 @@ router.post("/", async (req, res, next) => {
   return next();
 });
 
-// PATCH /crud/prospectos/:id_appsheet
 router.patch("/:id_appsheet", async (req, res, next) => {
   if (!tiene(req.body, "comentarios")) return next();
-  if (!req.auth.acceso_global) return negarComentariosPlantel(res);
+  if (!esInterno(req)) return negarComentariosPlantel(res);
 
   try {
     const idAppsheet = String(req.params.id_appsheet || "").trim();
