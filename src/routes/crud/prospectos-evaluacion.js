@@ -38,6 +38,19 @@ async function buscarProspecto(idAppsheet, req) {
   return rows[0] || null;
 }
 
+async function responderProspecto(idAppsheet, res) {
+  const [rows] = await pool.query(
+    "SELECT * FROM vw_company_viewer_prospectos WHERE id_appsheet = ? LIMIT 1",
+    [idAppsheet]
+  );
+
+  return res.json({
+    ok: true,
+    message: "Status de evaluación actualizado correctamente.",
+    data: rows[0] || null
+  });
+}
+
 router.patch("/:id_appsheet", async (req, res, next) => {
   const body = req.body || {};
   const solicitaNivel = tiene(body, "nivel_sugerido");
@@ -65,6 +78,9 @@ router.patch("/:id_appsheet", async (req, res, next) => {
     }
 
     // Nueva transición manual permitida: No aplica -> Falta examen escrito.
+    // Si el PATCH trae otros campos (por ejemplo desde el editor completo),
+    // aplicamos primero la transición y dejamos que el CRUD existente procese
+    // el resto del body sin volver a validar este status.
     if (solicitaStatus && String(body.status || "").trim() === STATUS_FALTA_EXAMEN_ESCRITO) {
       if (codigoActual !== 0) {
         return res.status(409).json({
@@ -74,30 +90,16 @@ router.patch("/:id_appsheet", async (req, res, next) => {
         });
       }
 
-      const otrosCampos = Object.keys(body).filter((campo) => campo !== "status");
-      if (otrosCampos.length > 0) {
-        return res.status(400).json({
-          ok: false,
-          code: "TRANSICION_STATUS_REQUIERE_ACCION_SEPARADA",
-          message: "Cambia el status de evaluación por separado antes de guardar otros campos."
-        });
-      }
-
       await pool.query(
         "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
         [STATUS_FALTA_EXAMEN_ESCRITO, idAppsheet]
       );
 
-      const [rows] = await pool.query(
-        "SELECT * FROM vw_company_viewer_prospectos WHERE id_appsheet = ? LIMIT 1",
-        [idAppsheet]
-      );
+      delete body.status;
 
-      return res.json({
-        ok: true,
-        message: "Status de evaluación actualizado correctamente.",
-        data: rows[0] || null
-      });
+      if (Object.keys(body).length === 0) {
+        return responderProspecto(idAppsheet, res);
+      }
     }
 
     return next();
