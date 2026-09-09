@@ -1,11 +1,8 @@
 const express = require("express");
-const { Storage } = require("@google-cloud/storage");
 const pool = require("../db/pool");
 const requireAuth = require("../middleware/requireAuth");
 
 const router = express.Router();
-const storage = new Storage();
-const AUDIO_URL_TTL_MS = 10 * 60 * 1000;
 
 router.use(requireAuth);
 
@@ -32,11 +29,6 @@ function filtroPlantel(req, sql, params) {
   }
 
   return sql;
-}
-
-function idAppsheetValido(value) {
-  const idAppsheet = String(value || "").trim();
-  return idAppsheet && idAppsheet.length <= 40 ? idAppsheet : null;
 }
 
 
@@ -204,15 +196,7 @@ router.get("/prospectos", async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
 
-    const data = rows.map((row) => ({
-      ...row,
-      promedio_total:
-        row.promedio_total !== null && Number(row.promedio_total) === 0
-          ? null
-          : row.promedio_total
-    }));
-
-    res.json({ ok: true, data });
+    res.json({ ok: true, data: rows });
 
   } catch (error) {
     console.error("[VIEWER] prospectos", error);
@@ -220,101 +204,6 @@ router.get("/prospectos", async (req, res) => {
     res.status(500).json({
       ok: false,
       message: "No pudimos consultar los prospectos."
-    });
-  }
-});
-
-// ======================================================
-// AUDIO DE PROSPECTO
-// Devuelve una URL firmada temporal, nunca expone credenciales.
-// ======================================================
-
-router.get("/prospectos/:id_appsheet/audio-url", async (req, res) => {
-  if (!permitir(req, res, "prospectos")) return;
-
-  try {
-    const idAppsheet = idAppsheetValido(req.params.id_appsheet);
-
-    if (!idAppsheet) {
-      return res.status(400).json({
-        ok: false,
-        code: "PROSPECTO_INVALIDO",
-        message: "El prospecto indicado no es válido."
-      });
-    }
-
-    const bucketName = String(process.env.GCS_BUCKET || "").trim();
-
-    if (!bucketName) {
-      console.error("[VIEWER] GCS_BUCKET no está configurado");
-      return res.status(500).json({
-        ok: false,
-        code: "STORAGE_NO_CONFIGURADO",
-        message: "El almacenamiento de audios no está configurado."
-      });
-    }
-
-    const params = [idAppsheet];
-    let sql = `
-      SELECT
-        id_appsheet,
-        id_plantel,
-        audio_url
-      FROM Examenes_Evaluacion
-      WHERE id_appsheet = ?
-    `;
-
-    if (!req.auth.acceso_global) {
-      sql += " AND id_plantel = ?";
-      params.push(req.auth.id_plantel);
-    }
-
-    sql += " LIMIT 1";
-
-    const [rows] = await pool.query(sql, params);
-
-    if (!rows.length) {
-      return res.status(404).json({
-        ok: false,
-        code: "PROSPECTO_NO_ENCONTRADO",
-        message: "No encontramos el prospecto solicitado."
-      });
-    }
-
-    const objectPath = String(rows[0].audio_url || "").trim().replace(/^\/+/, "");
-
-    if (!objectPath) {
-      return res.status(404).json({
-        ok: false,
-        code: "AUDIO_NO_DISPONIBLE",
-        message: "Este prospecto todavía no tiene audio oral."
-      });
-    }
-
-    const expiresAt = Date.now() + AUDIO_URL_TTL_MS;
-    const [url] = await storage
-      .bucket(bucketName)
-      .file(objectPath)
-      .getSignedUrl({
-        version: "v4",
-        action: "read",
-        expires: expiresAt
-      });
-
-    return res.json({
-      ok: true,
-      url,
-      expires_at: new Date(expiresAt).toISOString(),
-      expires_in: Math.floor(AUDIO_URL_TTL_MS / 1000)
-    });
-
-  } catch (error) {
-    console.error("[VIEWER] audio prospecto", error);
-
-    return res.status(500).json({
-      ok: false,
-      code: "ERROR_AUDIO_PROSPECTO",
-      message: "No pudimos preparar el audio del prospecto."
     });
   }
 });
@@ -362,7 +251,7 @@ router.get("/prospectos/:id_appsheet/contactos", async (req, res) => {
         ON e.id_appsheet = c.id_appsheet
 
       LEFT JOIN USUARIOS u
-        ON u.`ID Usuario` = c.id_usuario
+        ON u.\`ID Usuario\` = c.id_usuario
 
       WHERE c.id_appsheet = ?
     `;
@@ -498,7 +387,7 @@ router.get("/cursos", async (req, res) => {
 
     let sql = `
       SELECT
-        `ID CURSO` AS IdCurso,
+        \`ID CURSO\` AS IdCurso,
         Nombre AS Curso,
         Color AS ColorCurso,
         Status AS StatusCurso
