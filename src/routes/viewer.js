@@ -19,16 +19,180 @@ function permitir(req, res, modulo) {
   return true;
 }
 
-function filtroPlantel(req, sql, params) {
-  if (!req.auth.acceso_global) {
-    sql += " AND IdPlantel = ?";
+function puedeVerFinanzas(req) {
+  return req.auth.capacidades?.ver_finanzas === true;
+}
+
+function aplicarAlcance(req, sql, params, opciones = {}) {
+  const columnaPlantel = opciones.columnaPlantel || "IdPlantel";
+  const columnaMaestroTitular = opciones.columnaMaestroTitular || null;
+
+  if (req.auth.alcance === "PLANTEL") {
+    sql += ` AND ${columnaPlantel} = ?`;
     params.push(req.auth.id_plantel);
-  } else if (req.query.id_plantel) {
-    sql += " AND IdPlantel = ?";
-    params.push(req.query.id_plantel);
+    return sql;
   }
 
-  return sql;
+  if (req.auth.alcance === "MAESTRO") {
+    if (!columnaMaestroTitular) {
+      throw new Error("ALCANCE_MAESTRO_NO_SOPORTADO");
+    }
+
+    sql += ` AND ${columnaMaestroTitular} = ?`;
+    params.push(req.auth.id_usuario);
+    return sql;
+  }
+
+  if (req.auth.alcance === "GLOBAL") {
+    if (req.query.id_plantel) {
+      sql += ` AND ${columnaPlantel} = ?`;
+      params.push(req.query.id_plantel);
+    }
+    return sql;
+  }
+
+  throw new Error("ALCANCE_INVALIDO");
+}
+
+function filtroPlantel(req, sql, params) {
+  return aplicarAlcance(req, sql, params);
+}
+
+function numero(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function nuevaSumaFinanciera(idPlantel = null, idGrupo = null) {
+  return {
+    ...(idPlantel ? { id_plantel: idPlantel } : {}),
+    ...(idGrupo ? { id_grupo: idGrupo } : {}),
+    cuota_mensual: 0,
+    cuota_mensual_con_descuento: 0,
+    pago_maestros: 0,
+    asistencias_sin_pago: 0
+  };
+}
+
+function construirResumenFinanciero(rows, pagosRows) {
+  const totales = nuevaSumaFinanciera();
+  const porGrupo = new Map();
+  const porPlantel = new Map();
+
+  const alumnosGlobales = new Set();
+  const alumnosPorGrupo = new Set();
+  const alumnosPorPlantel = new Set();
+
+  for (const row of rows) {
+    const idAlumno = String(row.IdAlumno || "").trim();
+    const idGrupo = String(row.IdGrupo || "").trim();
+    const idPlantel = String(row.IdPlantel || "").trim();
+
+    if (!idAlumno) continue;
+
+    const cuota = numero(row.CuotaMensual);
+    const cuotaDescuento = numero(row.CuotaMensualConDescuento);
+
+    if (!alumnosGlobales.has(idAlumno)) {
+      alumnosGlobales.add(idAlumno);
+      totales.cuota_mensual += cuota;
+      totales.cuota_mensual_con_descuento += cuotaDescuento;
+    }
+
+    if (idGrupo) {
+      const llaveGrupoAlumno = `${idGrupo}:${idAlumno}`;
+      if (!alumnosPorGrupo.has(llaveGrupoAlumno)) {
+        alumnosPorGrupo.add(llaveGrupoAlumno);
+        if (!porGrupo.has(idGrupo)) {
+          porGrupo.set(idGrupo, nuevaSumaFinanciera(idPlantel || null, idGrupo));
+        }
+        const resumenGrupo = porGrupo.get(idGrupo);
+        resumenGrupo.cuota_mensual += cuota;
+        resumenGrupo.cuota_mensual_con_descuento += cuotaDescuento;
+      }
+    }
+
+    if (idPlantel) {
+      const llavePlantelAlumno = `${idPlantel}:${idAlumno}`;
+      if (!alumnosPorPlantel.has(llavePlantelAlumno)) {
+        alumnosPorPlantel.add(llavePlantelAlumno);
+        if (!porPlantel.has(idPlantel)) {
+          porPlantel.set(idPlantel, nuevaSumaFinanciera(idPlantel));
+        }
+        const resumenPlantel = porPlantel.get(idPlantel);
+        resumenPlantel.cuota_mensual += cuota;
+        resumenPlantel.cuota_mensual_con_descuento += cuotaDescuento;
+      }
+    }
+  }
+
+  for (const pago of pagosRows) {
+    const idGrupo = String(pago.IdGrupo || "").trim();
+    const idPlantel = String(pago.IdPlantel || "").trim();
+    const totalPago = numero(pago.TotalPagoMaestros);
+    const sinPago = numero(pago.AsistenciasSinPago);
+
+    totales.pago_maestros += totalPago;
+    totales.asistencias_sin_pago += sinPago;
+
+    if (idGrupo) {
+      if (!porGrupo.has(idGrupo)) {
+        porGrupo.set(idGrupo, nuevaSumaFinanciera(idPlantel || null, idGrupo));
+      }
+      const resumenGrupo = porGrupo.get(idGrupo);
+      resumenGrupo.pago_maestros += totalPago;
+      resumenGrupo.asistencias_sin_pago += sinPago;
+    }
+
+    if (idPlantel) {
+      if (!porPlantel.has(idPlantel)) {
+        porPlantel.set(idPlantel, nuevaSumaFinanciera(idPlantel));
+      }
+      const resumenPlantel = porPlantel.get(idPlantel);
+      resumenPlantel.pago_maestros += totalPago;
+      resumenPlantel.asistencias_sin_pago += sinPago;
+    }
+  }
+
+  return {
+    totales,
+    por_grupo: Array.from(porGrupo.values()),
+    por_plantel: Array.from(porPlantel.values())
+  };
+}
+
+async function consultarPagosMaestros(req) {
+  const params = [];
+
+  let sql = `
+    SELECT
+      IdPlantel,
+      IdGrupo,
+      COALESCE(SUM(Pago), 0) AS TotalPagoMaestros,
+      SUM(CASE WHEN Pago IS NULL THEN 1 ELSE 0 END) AS AsistenciasSinPago
+    FROM ASISTENCIAS
+    WHERE 1 = 1
+  `;
+
+  sql = aplicarAlcance(req, sql, params, {
+    columnaPlantel: "IdPlantel",
+    columnaMaestroTitular: null
+  });
+
+  if (req.query.desde) {
+    sql += " AND FechaClase >= ?";
+    params.push(req.query.desde);
+  }
+
+  if (req.query.hasta) {
+    sql += " AND FechaClase <= ?";
+    params.push(req.query.hasta);
+  }
+
+  sql += " GROUP BY IdPlantel, IdGrupo";
+
+  const [rows] = await pool.query(sql, params);
+  return rows;
 }
 
 
@@ -41,10 +205,18 @@ router.get("/asistencias", async (req, res) => {
 
   try {
     const params = [];
+    const incluirFinanzas = puedeVerFinanzas(req);
 
     const comentarioClaseSelect = req.auth.acceso_global
       ? "ComentarioClase"
       : "NULL AS ComentarioClase";
+
+    const columnasFinancieras = incluirFinanzas
+      ? `,
+        CuotaMensual,
+        CuotaMensualConDescuento,
+        PagoMaestro`
+      : "";
 
     let sql = `
       SELECT
@@ -96,11 +268,15 @@ router.get("/asistencias", async (req, res) => {
         Plantel,
         CorreoCliente,
         LogoUrl
-      FROM vw_detalle_asistencias_completo_renovado v
+        ${columnasFinancieras}
+      FROM vw_company_viewer_asistencias v
       WHERE 1 = 1
     `;
 
-    sql = filtroPlantel(req, sql, params);
+    sql = aplicarAlcance(req, sql, params, {
+      columnaPlantel: "IdPlantel",
+      columnaMaestroTitular: "IdMaestroTitular"
+    });
 
     if (req.query.desde) {
       sql += " AND Fecha >= ?";
@@ -119,7 +295,18 @@ router.get("/asistencias", async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
 
-    res.json({ ok: true, data: rows });
+    if (!incluirFinanzas) {
+      return res.json({ ok: true, data: rows });
+    }
+
+    const pagosRows = await consultarPagosMaestros(req);
+    const financial = construirResumenFinanciero(rows, pagosRows);
+
+    return res.json({
+      ok: true,
+      data: rows,
+      financial
+    });
 
   } catch (error) {
     console.error("[VIEWER] asistencias", error);

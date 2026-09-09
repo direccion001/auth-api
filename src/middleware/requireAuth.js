@@ -38,11 +38,19 @@ async function requireAuth(req, res, next) {
         throw new Error("CUENTA_INVALIDA");
       }
 
+      const politica = PERMISOS.obtenerPolitica("PLANTEL");
+
+      if (!politica) {
+        throw new Error("POLITICA_INVALIDA");
+      }
+
       req.auth = {
         tipo_usuario: "PLANTEL",
         id_plantel: rows[0].id_plantel,
-        acceso_global: false,
-        modulos: PERMISOS.PLANTEL
+        alcance: politica.alcance,
+        acceso_global: politica.acceso_global,
+        modulos: politica.modulos,
+        capacidades: politica.capacidades
       };
 
       return next();
@@ -69,13 +77,20 @@ async function requireAuth(req, res, next) {
       }
 
       const usuario = rows[0];
+      const politica = PERMISOS.obtenerPolitica(usuario.rol);
+
+      if (!politica) {
+        throw new Error("POLITICA_INVALIDA");
+      }
 
       req.auth = {
         tipo_usuario: "INTERNO",
         id_usuario: usuario.id_usuario,
         rol: usuario.rol,
-        acceso_global: true,
-        modulos: PERMISOS[usuario.rol] || []
+        alcance: politica.alcance,
+        acceso_global: politica.acceso_global,
+        modulos: politica.modulos,
+        capacidades: politica.capacidades
       };
 
       return next();
