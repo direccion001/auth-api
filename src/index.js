@@ -4,6 +4,7 @@ require("dotenv").config();
 
 const authRouter = require("./routes/auth");
 const viewerRouter = require("./routes/viewer");
+const viewerProspectosPrivacyRouter = require("./routes/viewer-prospectos-privacy");
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
 const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const graduacionesViewerRouter = require("./routes/viewer-graduaciones");
@@ -27,6 +28,7 @@ app.use("/auth", authRouter);
 app.use("/viewer/seguimientos", seguimientosViewerRouter);
 app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer/graduaciones", graduacionesViewerRouter);
+app.use("/viewer", viewerProspectosPrivacyRouter);
 app.use("/viewer", viewerRouter);
 app.use("/crud", crudRouter);
 

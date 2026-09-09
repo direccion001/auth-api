@@ -9,7 +9,8 @@ router.use(requireAuth);
 
 const STATUS_NO_APLICA = "0 No aplica";
 const STATUS_FALTA_EXAMEN_ESCRITO = "1 Falta examen escrito";
-const STATUS_NIVEL_ASIGNADO_CANONICO = "4 Nivel Asignado";
+const STATUS_NIVEL_ASIGNADO_CANONICO = "4 Nivel asignado";
+const STATUS_NIVEL_ASIGNADO_COMPAT = "4 Nivel Asignado";
 
 function statusCode(value) {
   const match = String(value ?? "").trim().match(/^(\d+)/);
@@ -67,20 +68,50 @@ router.patch("/:id_appsheet", async (req, res, next) => {
 
     const codigoActual = statusCode(actual.status);
 
-    // Compatibilidad con datos históricos: el CRUD mergeado compara el texto
-    // completo de status 4. Canonicalizamos al editar nivel para que cualquier
-    // variante de "4 Nivel asignado" continúe siendo editable.
-    if (solicitaNivel && codigoActual === 4 && actual.status !== STATUS_NIVEL_ASIGNADO_CANONICO) {
+    // El CRUD ya mergeado compara literalmente contra "4 Nivel Asignado".
+    // Usamos esa variante solo como compatibilidad interna antes de delegar.
+    // El valor persistido final debe seguir siendo el histórico/canónico:
+    // "4 Nivel asignado".
+    if (solicitaNivel && codigoActual === 4 && actual.status !== STATUS_NIVEL_ASIGNADO_COMPAT) {
       await pool.query(
         "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
-        [STATUS_NIVEL_ASIGNADO_CANONICO, idAppsheet]
+        [STATUS_NIVEL_ASIGNADO_COMPAT, idAppsheet]
       );
     }
 
-    // Nueva transición manual permitida: No aplica -> Falta examen escrito.
-    // Si el PATCH trae otros campos (por ejemplo desde el editor completo),
-    // aplicamos primero la transición y dejamos que el CRUD existente procese
-    // el resto del body sin volver a validar este status.
+    if (solicitaNivel) {
+      const originalJson = res.json.bind(res);
+      res.json = async (payload) => {
+        try {
+          if (res.statusCode < 300 && payload?.data) {
+            const statusResultado = payload.data.status_evaluacion ?? payload.data.status;
+            if (statusCode(statusResultado) === 4) {
+              await pool.query(
+                "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
+                [STATUS_NIVEL_ASIGNADO_CANONICO, idAppsheet]
+              );
+
+              if (Object.prototype.hasOwnProperty.call(payload.data, "status_evaluacion")) {
+                payload.data.status_evaluacion = STATUS_NIVEL_ASIGNADO_CANONICO;
+              }
+              if (Object.prototype.hasOwnProperty.call(payload.data, "status")) {
+                payload.data.status = STATUS_NIVEL_ASIGNADO_CANONICO;
+              }
+            }
+          }
+        } catch (error) {
+          console.error("[CRUD PROSPECTOS] Error restaurando status canónico de nivel", error);
+          return originalJson({
+            ok: false,
+            code: "ERROR_STATUS_NIVEL_CANONICO",
+            message: "El nivel se actualizó, pero no pudimos normalizar su status."
+          });
+        }
+
+        return originalJson(payload);
+      };
+    }
+
     if (solicitaStatus && String(body.status || "").trim() === STATUS_FALTA_EXAMEN_ESCRITO) {
       if (codigoActual !== 0) {
         return res.status(409).json({
