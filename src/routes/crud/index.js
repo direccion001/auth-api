@@ -1,5 +1,6 @@
 const express = require("express");
 
+const prospectosEvaluacionRouter = require("./prospectos-evaluacion");
 const prospectosRouter = require("./prospectos");
 const detalleAsistenciasRouter = require("./detalle-asistencias");
 const seguimientosEstadoRouter = require("./seguimientos-estado");
@@ -9,6 +10,7 @@ const graduacionesRouter = require("./graduaciones");
 
 const router = express.Router();
 
+router.use("/prospectos", prospectosEvaluacionRouter);
 router.use("/prospectos", prospectosRouter);
 router.use("/detalle-asistencias", detalleAsistenciasRouter);
 router.use("/seguimientos", seguimientosEstadoRouter);
