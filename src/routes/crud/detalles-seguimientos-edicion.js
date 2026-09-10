@@ -92,7 +92,7 @@ function validarCampos(body, actual = null) {
   if (requiereRaw === null) return { error: [400, "PROXIMO_SEGUIMIENTO_INVALIDO", "Indica si este registro requiere un próximo seguimiento."] };
   const fechaProxima = requiereRaw ? (tiene(body, "fecha_proximo_seguimiento") || !actual ? fecha(body.fecha_proximo_seguimiento) : actual.FechaProximoSeguimiento) : null;
   if (requiereRaw && fechaProxima === undefined) return { error: [400, "FECHA_PROXIMO_SEGUIMIENTO_INVALIDA", "Selecciona una fecha válida para el próximo seguimiento."] };
-  if (requiereRaw && !fechaProxima) return { error: [400, "FECHA_PROXIMO_SEGUIMIENTO_REQUERIDA", "Selecciona la fecha del próximo seguimiento."] };
+  if (requiereRaw && !fechaProxima) return { error: [400, "FECHA_PROXIMO_SEGUIMIENTO_REQUERIDA", "Selecciona la fecha del próximo seguimiento." ] };
   const visibleRaw = tiene(body, "visible_cliente") ? bool(body.visible_cliente) : (actual ? Boolean(actual.VisibleCliente) : true);
   if (visibleRaw === null) return { error: [400, "VISIBLE_CLIENTE_INVALIDO", "Indica si este registro será visible para el plantel."] };
   return { tipo: t, forma, resultado, comentario, requiere: requiereRaw, fechaProxima, visible: visibleRaw };
