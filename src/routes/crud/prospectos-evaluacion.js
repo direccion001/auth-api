@@ -11,6 +11,7 @@ const STATUS_NO_APLICA = "0 No aplica";
 const STATUS_FALTA_EXAMEN_ESCRITO = "1 Falta examen escrito";
 const STATUS_NIVEL_ASIGNADO_CANONICO = "4 Nivel asignado";
 const STATUS_NIVEL_ASIGNADO_COMPAT = "4 Nivel Asignado";
+const CODIGOS_RESTAURABLES_DESDE_NO_APLICA = new Set([1, 3, 4]);
 
 function statusCode(value) {
   const match = String(value ?? "").trim().match(/^(\d+)/);
@@ -70,8 +71,6 @@ router.patch("/:id_appsheet", async (req, res, next) => {
 
     // El CRUD ya mergeado compara literalmente contra "4 Nivel Asignado".
     // Usamos esa variante solo como compatibilidad interna antes de delegar.
-    // El valor persistido final debe seguir siendo el histórico/canónico:
-    // "4 Nivel asignado".
     if (solicitaNivel && codigoActual === 4 && actual.status !== STATUS_NIVEL_ASIGNADO_COMPAT) {
       await pool.query(
         "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
@@ -112,24 +111,35 @@ router.patch("/:id_appsheet", async (req, res, next) => {
       };
     }
 
-    if (solicitaStatus && String(body.status || "").trim() === STATUS_FALTA_EXAMEN_ESCRITO) {
-      if (codigoActual !== 0) {
-        return res.status(409).json({
-          ok: false,
-          code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
-          message: `Solo puede regresar a ${STATUS_FALTA_EXAMEN_ESCRITO} desde ${STATUS_NO_APLICA}.`
-        });
-      }
+    if (solicitaStatus) {
+      const statusSolicitado = String(body.status || "").trim();
+      const codigoSolicitado = statusCode(statusSolicitado);
 
-      await pool.query(
-        "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
-        [STATUS_FALTA_EXAMEN_ESCRITO, idAppsheet]
-      );
+      if (codigoActual === 0 && CODIGOS_RESTAURABLES_DESDE_NO_APLICA.has(codigoSolicitado)) {
+        const valorPersistido = codigoSolicitado === 4 ? STATUS_NIVEL_ASIGNADO_CANONICO : statusSolicitado;
+        await pool.query(
+          "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
+          [valorPersistido, idAppsheet]
+        );
 
-      delete body.status;
+        delete body.status;
+        if (Object.keys(body).length === 0) return responderProspecto(idAppsheet, res);
+      } else if (statusSolicitado === STATUS_FALTA_EXAMEN_ESCRITO) {
+        if (codigoActual !== 0) {
+          return res.status(409).json({
+            ok: false,
+            code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
+            message: `Solo puede regresar a ${STATUS_FALTA_EXAMEN_ESCRITO} desde ${STATUS_NO_APLICA}.`
+          });
+        }
 
-      if (Object.keys(body).length === 0) {
-        return responderProspecto(idAppsheet, res);
+        await pool.query(
+          "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
+          [STATUS_FALTA_EXAMEN_ESCRITO, idAppsheet]
+        );
+
+        delete body.status;
+        if (Object.keys(body).length === 0) return responderProspecto(idAppsheet, res);
       }
     }
 
