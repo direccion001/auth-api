@@ -17,10 +17,15 @@ function puedeVerProspectos(req) {
   return Array.isArray(req.auth?.modulos) && req.auth.modulos.includes("prospectos");
 }
 
-function quitarComentarios(data) {
-  if (Array.isArray(data)) return data.map(quitarComentarios);
+function quitarCamposInternos(data) {
+  if (Array.isArray(data)) return data.map(quitarCamposInternos);
   if (!data || typeof data !== "object") return data;
-  const { comentarios, ...resto } = data;
+  const {
+    comentarios,
+    id_usuario_responsable,
+    responsable_actual,
+    ...resto
+  } = data;
   return resto;
 }
 
@@ -38,6 +43,34 @@ function normalizarPromedio(data) {
   }));
 }
 
+async function enriquecerResponsables(data) {
+  if (!Array.isArray(data) || !data.length) return data;
+
+  const ids = [...new Set(data.map((row) => String(row?.id_appsheet || "").trim()).filter(Boolean))];
+  if (!ids.length) return data;
+
+  const placeholders = ids.map(() => "?").join(",");
+  const [rows] = await pool.query(
+    `
+      SELECT
+        e.id_appsheet,
+        e.id_usuario_responsable,
+        CONCAT_WS(' ', u.Nombre, u.Apellidos) AS responsable_actual
+      FROM Examenes_Evaluacion e
+      LEFT JOIN USUARIOS u
+        ON u.\`ID Usuario\` = e.id_usuario_responsable
+      WHERE e.id_appsheet IN (${placeholders})
+    `,
+    ids
+  );
+
+  const porId = new Map(rows.map((row) => [String(row.id_appsheet), row]));
+  return data.map((row) => {
+    const extra = porId.get(String(row?.id_appsheet || ""));
+    return extra ? { ...row, ...extra } : row;
+  });
+}
+
 function idAppsheetValido(value) {
   const idAppsheet = String(value || "").trim();
   return idAppsheet && idAppsheet.length <= 40 ? idAppsheet : null;
@@ -46,12 +79,18 @@ function idAppsheetValido(value) {
 router.get("/prospectos", (req, res, next) => {
   const originalJson = res.json.bind(res);
 
-  res.json = (payload) => {
+  res.json = async (payload) => {
     if (payload && Object.prototype.hasOwnProperty.call(payload, "data")) {
       let data = normalizarPromedio(payload.data);
 
-      if (!esInterno(req)) {
-        data = quitarComentarios(data);
+      if (esInterno(req)) {
+        try {
+          data = await enriquecerResponsables(data);
+        } catch (error) {
+          console.error("[VIEWER] No pudimos enriquecer responsables de prospectos", error);
+        }
+      } else {
+        data = quitarCamposInternos(data);
       }
 
       payload = { ...payload, data };
