@@ -15,8 +15,21 @@ const graduacionesRouter = require("./graduaciones");
 
 const router = express.Router();
 
+// Regla del módulo Prospectos: solo Admin y Directivo pueden modificar.
+router.use("/prospectos", requireAuth, (req, res, next) => {
+  if (!["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) return next();
+  const rol = String(req.auth?.rol || "").trim().toLowerCase();
+  if (rol === "admin" || rol === "directivo") return next();
+
+  return res.status(403).json({
+    ok: false,
+    code: "PROSPECTOS_SOLO_ADMIN_DIRECTIVO",
+    message: "Solo Admin y Directivo pueden modificar Prospectos."
+  });
+});
+
 // Invariante de negocio: una vez inscrito, el status de contacto es terminal.
-// El resto de campos del prospecto continúa siendo editable.
+// El resto de campos del prospecto continúa siendo editable para roles autorizados.
 router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => {
   if (!Object.prototype.hasOwnProperty.call(req.body || {}, "status_contacto")) {
     return next();
