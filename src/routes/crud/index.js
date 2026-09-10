@@ -10,7 +10,9 @@ const prospectosContactosFechaRouter = require("./prospectos-contactos-fecha");
 const prospectosRouter = require("./prospectos");
 const detalleAsistenciasRouter = require("./detalle-asistencias");
 const seguimientosEstadoRouter = require("./seguimientos-estado");
+const seguimientosLimitesRouter = require("./seguimientos-limites");
 const seguimientosRouter = require("./seguimientos");
+const detallesSeguimientosEdicionRouter = require("./detalles-seguimientos-edicion");
 const detallesSeguimientosRouter = require("./detalles-seguimientos");
 const graduacionesRouter = require("./graduaciones");
 
@@ -86,7 +88,9 @@ router.use("/prospectos", prospectosContactosFechaRouter);
 router.use("/prospectos", prospectosRouter);
 router.use("/detalle-asistencias", detalleAsistenciasRouter);
 router.use("/seguimientos", seguimientosEstadoRouter);
+router.use("/seguimientos", seguimientosLimitesRouter);
 router.use("/seguimientos", seguimientosRouter);
+router.use("/detalles-seguimientos", detallesSeguimientosEdicionRouter);
 router.use("/detalles-seguimientos", detallesSeguimientosRouter);
 router.use("/graduaciones", graduacionesRouter);
 
