@@ -2,6 +2,7 @@ const express = require("express");
 const pool = require("../../db/pool");
 const requireAuth = require("../../middleware/requireAuth");
 
+const prospectosResponsableRouter = require("./prospectos-responsable");
 const prospectosComentariosRouter = require("./prospectos-comentarios");
 const prospectosEvaluacionRouter = require("./prospectos-evaluacion");
 const prospectosRouter = require("./prospectos");
@@ -62,6 +63,7 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
   }
 });
 
+router.use("/prospectos", prospectosResponsableRouter);
 router.use("/prospectos", prospectosComentariosRouter);
 router.use("/prospectos", prospectosEvaluacionRouter);
 router.use("/prospectos", prospectosRouter);
