@@ -31,7 +31,7 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
     const idAppsheet = String(req.params.id_appsheet || "").trim();
     const statusSolicitado = String(req.body?.status_contacto || "").trim();
     const params = [idAppsheet];
-    let sql = `SELECT status_contacto FROM Examenes_Evaluacion WHERE id_appsheet = ?`;
+    let sql = "SELECT status_contacto FROM Examenes_Evaluacion WHERE id_appsheet = ?";
     if (!req.auth.acceso_global) { sql += " AND id_plantel = ?"; params.push(req.auth.id_plantel); }
     sql += " LIMIT 1";
     const [rows] = await pool.query(sql, params);
