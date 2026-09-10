@@ -94,7 +94,7 @@ async function validarResponsable(connection, idUsuario) {
     FROM USUARIOS
     WHERE \`ID Usuario\` = ?
       AND Status = 'Activo'
-      AND Rol IN ('Administrador', 'Directivo')
+      AND LOWER(TRIM(Rol)) IN ('admin', 'directivo')
     LIMIT 1
     `,
     [idUsuario]
@@ -150,10 +150,6 @@ async function consultarSeguimiento(connection, idSeguimiento) {
   return rows[0] || null;
 }
 
-// ======================================================
-// POST /crud/seguimientos
-// ======================================================
-
 router.post("/", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
 
@@ -165,82 +161,37 @@ router.post("/", async (req, res) => {
   const comentarioApertura = normalizarTexto(req.body?.comentario_apertura);
 
   if (!idAlumno) {
-    return res.status(400).json({
-      ok: false,
-      code: "ALUMNO_REQUERIDO",
-      message: "Selecciona el alumno que estará en seguimiento."
-    });
+    return res.status(400).json({ ok: false, code: "ALUMNO_REQUERIDO", message: "Selecciona el alumno que estará en seguimiento." });
   }
-
   if (!idUsuarioResponsable) {
-    return res.status(400).json({
-      ok: false,
-      code: "RESPONSABLE_REQUERIDO",
-      message: "Selecciona al responsable del seguimiento."
-    });
+    return res.status(400).json({ ok: false, code: "RESPONSABLE_REQUERIDO", message: "Selecciona al responsable del seguimiento." });
   }
-
   if (!fechaApertura) {
-    return res.status(400).json({
-      ok: false,
-      code: "FECHA_APERTURA_INVALIDA",
-      message: "Selecciona una fecha y hora de apertura válidas."
-    });
+    return res.status(400).json({ ok: false, code: "FECHA_APERTURA_INVALIDA", message: "Selecciona una fecha y hora de apertura válidas." });
   }
-
   if (!comentarioApertura) {
-    return res.status(400).json({
-      ok: false,
-      code: "COMENTARIO_APERTURA_REQUERIDO",
-      message: "Escribe el motivo por el que se abre este seguimiento."
-    });
+    return res.status(400).json({ ok: false, code: "COMENTARIO_APERTURA_REQUERIDO", message: "Escribe el motivo por el que se abre este seguimiento." });
   }
 
   const connection = await pool.getConnection();
   const idSeguimiento = crypto.randomUUID();
-
   try {
     await connection.beginTransaction();
-
     if (!(await validarAlumno(connection, idAlumno))) {
       await connection.rollback();
-      return res.status(400).json({
-        ok: false,
-        code: "ALUMNO_INVALIDO",
-        message: "El alumno indicado no está disponible."
-      });
+      return res.status(400).json({ ok: false, code: "ALUMNO_INVALIDO", message: "El alumno indicado no está disponible." });
     }
-
     if (!(await validarResponsable(connection, idUsuarioResponsable))) {
       await connection.rollback();
-      return res.status(400).json({
-        ok: false,
-        code: "RESPONSABLE_INVALIDO",
-        message: "El responsable indicado no está disponible."
-      });
+      return res.status(400).json({ ok: false, code: "RESPONSABLE_INVALIDO", message: "El responsable indicado no está disponible." });
     }
 
     await connection.query(
-      `
-      INSERT INTO alumnos_seguimientos (
-        id_seguimiento,
-        IdAlumno,
-        IdUsuarioResponsable,
-        Status,
-        FechaApertura,
-        ComentarioApertura,
-        FechaCierre,
-        ComentarioCierre
-      )
-      VALUES (?, ?, ?, 'Abierto', ?, ?, NULL, NULL)
-      `,
-      [
-        idSeguimiento,
-        idAlumno,
-        idUsuarioResponsable,
-        fechaApertura,
-        comentarioApertura
-      ]
+      `INSERT INTO alumnos_seguimientos (
+        id_seguimiento, IdAlumno, IdUsuarioResponsable, Status,
+        FechaApertura, ComentarioApertura, FechaCierre, ComentarioCierre
+      ) VALUES (?, ?, ?, 'Abierto', ?, ?, NULL, NULL)`,
+      [idSeguimiento, idAlumno, idUsuarioResponsable, fechaApertura, comentarioApertura]
     );
 
     const despues = {
@@ -253,154 +204,46 @@ router.post("/", async (req, res) => {
       FechaCierre: null,
       ComentarioCierre: null
     };
-
-    await registrarAuditoria(
-      connection,
-      req,
-      "SEGUIMIENTO_CREADO",
-      idSeguimiento,
-      null,
-      despues
-    );
-
+    await registrarAuditoria(connection, req, "SEGUIMIENTO_CREADO", idSeguimiento, null, despues);
     const creado = await consultarSeguimiento(connection, idSeguimiento);
-
     await connection.commit();
-
     return res.status(201).json({
       ok: true,
       message: "Seguimiento abierto correctamente.",
-      data: creado
-        ? {
-            ...creado,
-            SeguimientoPropio:
-              String(creado.IdUsuarioResponsable) ===
-              String(req.auth.id_usuario)
-          }
-        : despues
+      data: creado ? { ...creado, SeguimientoPropio: String(creado.IdUsuarioResponsable) === String(req.auth.id_usuario) } : despues
     });
   } catch (error) {
-    try {
-      await connection.rollback();
-    } catch {
-      // Conserva el error original.
-    }
-
-    console.error("[CRUD SEGUIMIENTOS] Error creando", {
-      id_alumno: idAlumno,
-      id_usuario: req.auth?.id_usuario,
-      message: error?.message,
-      code: error?.code
-    });
-
-    return res.status(500).json({
-      ok: false,
-      code: "ERROR_CREANDO_SEGUIMIENTO",
-      message: "No pudimos abrir el seguimiento."
-    });
-  } finally {
-    connection.release();
-  }
+    try { await connection.rollback(); } catch {}
+    console.error("[CRUD SEGUIMIENTOS] Error creando", { id_alumno: idAlumno, id_usuario: req.auth?.id_usuario, message: error?.message, code: error?.code });
+    return res.status(500).json({ ok: false, code: "ERROR_CREANDO_SEGUIMIENTO", message: "No pudimos abrir el seguimiento." });
+  } finally { connection.release(); }
 });
-
-// ======================================================
-// PATCH /crud/seguimientos/:id_seguimiento
-// Edita cabecera o cierra. Un ticket cerrado no se reabre.
-// ======================================================
 
 router.patch("/:id_seguimiento", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
-
   const idSeguimiento = normalizarTexto(req.params.id_seguimiento);
+  if (!idSeguimiento) return res.status(400).json({ ok: false, code: "SEGUIMIENTO_REQUERIDO", message: "El seguimiento indicado no es válido." });
 
-  if (!idSeguimiento) {
-    return res.status(400).json({
-      ok: false,
-      code: "SEGUIMIENTO_REQUERIDO",
-      message: "El seguimiento indicado no es válido."
-    });
-  }
-
-  const tieneResponsable =
-    Object.prototype.hasOwnProperty.call(req.body || {}, "id_usuario") ||
-    Object.prototype.hasOwnProperty.call(
-      req.body || {},
-      "id_usuario_responsable"
-    );
-  const tieneFechaApertura = Object.prototype.hasOwnProperty.call(
-    req.body || {},
-    "fecha_apertura"
-  );
-  const tieneComentarioApertura = Object.prototype.hasOwnProperty.call(
-    req.body || {},
-    "comentario_apertura"
-  );
-  const tieneStatus = Object.prototype.hasOwnProperty.call(
-    req.body || {},
-    "status"
-  );
-  const tieneComentarioCierre = Object.prototype.hasOwnProperty.call(
-    req.body || {},
-    "comentario_cierre"
-  );
-
-  if (
-    !tieneResponsable &&
-    !tieneFechaApertura &&
-    !tieneComentarioApertura &&
-    !tieneStatus &&
-    !tieneComentarioCierre
-  ) {
-    return res.status(400).json({
-      ok: false,
-      code: "SIN_CAMBIOS",
-      message: "No hay cambios para guardar."
-    });
+  const tieneResponsable = Object.prototype.hasOwnProperty.call(req.body || {}, "id_usuario") || Object.prototype.hasOwnProperty.call(req.body || {}, "id_usuario_responsable");
+  const tieneFechaApertura = Object.prototype.hasOwnProperty.call(req.body || {}, "fecha_apertura");
+  const tieneComentarioApertura = Object.prototype.hasOwnProperty.call(req.body || {}, "comentario_apertura");
+  const tieneStatus = Object.prototype.hasOwnProperty.call(req.body || {}, "status");
+  const tieneComentarioCierre = Object.prototype.hasOwnProperty.call(req.body || {}, "comentario_cierre");
+  if (!tieneResponsable && !tieneFechaApertura && !tieneComentarioApertura && !tieneStatus && !tieneComentarioCierre) {
+    return res.status(400).json({ ok: false, code: "SIN_CAMBIOS", message: "No hay cambios para guardar." });
   }
 
   const connection = await pool.getConnection();
-
   try {
     await connection.beginTransaction();
-
     const [rows] = await connection.query(
-      `
-      SELECT
-        id_seguimiento,
-        IdAlumno,
-        IdUsuarioResponsable,
-        Status,
-        FechaApertura,
-        ComentarioApertura,
-        FechaCierre,
-        ComentarioCierre
-      FROM alumnos_seguimientos
-      WHERE id_seguimiento = ?
-      LIMIT 1
-      FOR UPDATE
-      `,
+      `SELECT id_seguimiento, IdAlumno, IdUsuarioResponsable, Status, FechaApertura, ComentarioApertura, FechaCierre, ComentarioCierre
+       FROM alumnos_seguimientos WHERE id_seguimiento = ? LIMIT 1 FOR UPDATE`,
       [idSeguimiento]
     );
-
-    if (!rows.length) {
-      await connection.rollback();
-      return res.status(404).json({
-        ok: false,
-        code: "SEGUIMIENTO_NO_ENCONTRADO",
-        message: "No encontramos ese seguimiento."
-      });
-    }
-
+    if (!rows.length) { await connection.rollback(); return res.status(404).json({ ok: false, code: "SEGUIMIENTO_NO_ENCONTRADO", message: "No encontramos ese seguimiento." }); }
     const antes = rows[0];
-
-    if (antes.Status === "Cerrado") {
-      await connection.rollback();
-      return res.status(409).json({
-        ok: false,
-        code: "SEGUIMIENTO_CERRADO",
-        message: "Este seguimiento ya está cerrado y no puede editarse."
-      });
-    }
+    if (antes.Status === "Cerrado") { await connection.rollback(); return res.status(409).json({ ok: false, code: "SEGUIMIENTO_CERRADO", message: "Este seguimiento ya está cerrado y no puede editarse." }); }
 
     let idUsuarioResponsable = antes.IdUsuarioResponsable;
     let fechaApertura = antes.FechaApertura;
@@ -410,301 +253,82 @@ router.patch("/:id_seguimiento", async (req, res) => {
     let comentarioCierre = antes.ComentarioCierre;
 
     if (tieneResponsable) {
-      idUsuarioResponsable = normalizarTexto(
-        req.body?.id_usuario ?? req.body?.id_usuario_responsable
-      );
-
-      if (!idUsuarioResponsable) {
-        await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "RESPONSABLE_REQUERIDO",
-          message: "Selecciona al responsable del seguimiento."
-        });
-      }
-
-      if (!(await validarResponsable(connection, idUsuarioResponsable))) {
-        await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "RESPONSABLE_INVALIDO",
-          message: "El responsable indicado no está disponible."
-        });
-      }
+      idUsuarioResponsable = normalizarTexto(req.body?.id_usuario ?? req.body?.id_usuario_responsable);
+      if (!idUsuarioResponsable) { await connection.rollback(); return res.status(400).json({ ok: false, code: "RESPONSABLE_REQUERIDO", message: "Selecciona al responsable del seguimiento." }); }
+      if (!(await validarResponsable(connection, idUsuarioResponsable))) { await connection.rollback(); return res.status(400).json({ ok: false, code: "RESPONSABLE_INVALIDO", message: "El responsable indicado no está disponible." }); }
     }
 
     if (tieneFechaApertura) {
       fechaApertura = normalizarFechaHoraLocal(req.body?.fecha_apertura);
-
-      if (!fechaApertura) {
-        await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "FECHA_APERTURA_INVALIDA",
-          message: "Selecciona una fecha y hora de apertura válidas."
-        });
-      }
+      if (!fechaApertura) { await connection.rollback(); return res.status(400).json({ ok: false, code: "FECHA_APERTURA_INVALIDA", message: "Selecciona una fecha y hora de apertura válidas." }); }
     }
-
     if (tieneComentarioApertura) {
       comentarioApertura = normalizarTexto(req.body?.comentario_apertura);
-
-      if (!comentarioApertura) {
-        await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "COMENTARIO_APERTURA_REQUERIDO",
-          message: "El motivo de apertura no puede quedar vacío."
-        });
-      }
+      if (!comentarioApertura) { await connection.rollback(); return res.status(400).json({ ok: false, code: "COMENTARIO_APERTURA_REQUERIDO", message: "El motivo de apertura no puede quedar vacío." }); }
     }
 
     if (tieneStatus) {
       const statusSolicitado = normalizarTexto(req.body?.status);
-
-      if (!["Abierto", "Cerrado"].includes(statusSolicitado)) {
-        await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "STATUS_SEGUIMIENTO_INVALIDO",
-          message: "Selecciona un status de seguimiento válido."
-        });
-      }
-
+      if (!["Abierto", "Cerrado"].includes(statusSolicitado)) { await connection.rollback(); return res.status(400).json({ ok: false, code: "STATUS_SEGUIMIENTO_INVALIDO", message: "Selecciona un status de seguimiento válido." }); }
       if (statusSolicitado === "Cerrado") {
         comentarioCierre = normalizarTexto(req.body?.comentario_cierre);
-
-        if (!comentarioCierre) {
-          await connection.rollback();
-          return res.status(400).json({
-            ok: false,
-            code: "COMENTARIO_CIERRE_REQUERIDO",
-            message:
-              "Escribe el motivo o resultado del cierre del seguimiento."
-          });
-        }
-
+        if (!comentarioCierre) { await connection.rollback(); return res.status(400).json({ ok: false, code: "COMENTARIO_CIERRE_REQUERIDO", message: "Escribe el motivo o resultado del cierre del seguimiento." }); }
         status = "Cerrado";
         fechaCierre = fechaMexicoAhora();
       } else if (tieneComentarioCierre) {
         await connection.rollback();
-        return res.status(400).json({
-          ok: false,
-          code: "CIERRE_INVALIDO",
-          message:
-            "El motivo de cierre solo puede registrarse al cerrar el seguimiento."
-        });
+        return res.status(400).json({ ok: false, code: "CIERRE_INVALIDO", message: "El motivo de cierre solo puede registrarse al cerrar el seguimiento." });
       }
     } else if (tieneComentarioCierre) {
       await connection.rollback();
-      return res.status(400).json({
-        ok: false,
-        code: "CIERRE_INVALIDO",
-        message:
-          "El motivo de cierre solo puede registrarse al cerrar el seguimiento."
-      });
+      return res.status(400).json({ ok: false, code: "CIERRE_INVALIDO", message: "El motivo de cierre solo puede registrarse al cerrar el seguimiento." });
     }
 
-    const despues = {
-      id_seguimiento: antes.id_seguimiento,
-      IdAlumno: antes.IdAlumno,
-      IdUsuarioResponsable: idUsuarioResponsable,
-      Status: status,
-      FechaApertura: fechaApertura,
-      ComentarioApertura: comentarioApertura,
-      FechaCierre: fechaCierre,
-      ComentarioCierre: comentarioCierre
-    };
-
+    const despues = { id_seguimiento: antes.id_seguimiento, IdAlumno: antes.IdAlumno, IdUsuarioResponsable: idUsuarioResponsable, Status: status, FechaApertura: fechaApertura, ComentarioApertura: comentarioApertura, FechaCierre: fechaCierre, ComentarioCierre: comentarioCierre };
     await connection.query(
-      `
-      UPDATE alumnos_seguimientos
-      SET
-        IdUsuarioResponsable = ?,
-        Status = ?,
-        FechaApertura = ?,
-        ComentarioApertura = ?,
-        FechaCierre = ?,
-        ComentarioCierre = ?
-      WHERE id_seguimiento = ?
-      `,
-      [
-        despues.IdUsuarioResponsable,
-        despues.Status,
-        despues.FechaApertura,
-        despues.ComentarioApertura,
-        despues.FechaCierre,
-        despues.ComentarioCierre,
-        idSeguimiento
-      ]
+      `UPDATE alumnos_seguimientos SET IdUsuarioResponsable = ?, Status = ?, FechaApertura = ?, ComentarioApertura = ?, FechaCierre = ?, ComentarioCierre = ? WHERE id_seguimiento = ?`,
+      [despues.IdUsuarioResponsable, despues.Status, despues.FechaApertura, despues.ComentarioApertura, despues.FechaCierre, despues.ComentarioCierre, idSeguimiento]
     );
-
-    await registrarAuditoria(
-      connection,
-      req,
-      "SEGUIMIENTO_ACTUALIZADO",
-      idSeguimiento,
-      antes,
-      despues
-    );
-
+    await registrarAuditoria(connection, req, "SEGUIMIENTO_ACTUALIZADO", idSeguimiento, antes, despues);
     const actualizado = await consultarSeguimiento(connection, idSeguimiento);
-
     await connection.commit();
-
     return res.json({
       ok: true,
-      message:
-        despues.Status === "Cerrado"
-          ? "Seguimiento cerrado correctamente."
-          : "Seguimiento actualizado correctamente.",
-      data: actualizado
-        ? {
-            ...actualizado,
-            SeguimientoPropio:
-              String(actualizado.IdUsuarioResponsable) ===
-              String(req.auth.id_usuario)
-          }
-        : despues
+      message: despues.Status === "Cerrado" ? "Seguimiento cerrado correctamente." : "Seguimiento actualizado correctamente.",
+      data: actualizado ? { ...actualizado, SeguimientoPropio: String(actualizado.IdUsuarioResponsable) === String(req.auth.id_usuario) } : despues
     });
   } catch (error) {
-    try {
-      await connection.rollback();
-    } catch {
-      // Conserva el error original.
-    }
-
-    console.error("[CRUD SEGUIMIENTOS] Error actualizando", {
-      id_seguimiento: idSeguimiento,
-      id_usuario: req.auth?.id_usuario,
-      message: error?.message,
-      code: error?.code
-    });
-
-    return res.status(500).json({
-      ok: false,
-      code: "ERROR_ACTUALIZANDO_SEGUIMIENTO",
-      message: "No pudimos guardar los cambios del seguimiento."
-    });
-  } finally {
-    connection.release();
-  }
+    try { await connection.rollback(); } catch {}
+    console.error("[CRUD SEGUIMIENTOS] Error actualizando", { id_seguimiento: idSeguimiento, id_usuario: req.auth?.id_usuario, message: error?.message, code: error?.code });
+    return res.status(500).json({ ok: false, code: "ERROR_ACTUALIZANDO_SEGUIMIENTO", message: "No pudimos guardar los cambios del seguimiento." });
+  } finally { connection.release(); }
 });
-
-// ======================================================
-// DELETE /crud/seguimientos/:id_seguimiento
-// Hard delete auditado. Los detalles se eliminan por CASCADE.
-// ======================================================
 
 router.delete("/:id_seguimiento", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
-
   const idSeguimiento = normalizarTexto(req.params.id_seguimiento);
-
-  if (!idSeguimiento) {
-    return res.status(400).json({
-      ok: false,
-      code: "SEGUIMIENTO_REQUERIDO",
-      message: "El seguimiento indicado no es válido."
-    });
-  }
+  if (!idSeguimiento) return res.status(400).json({ ok: false, code: "SEGUIMIENTO_REQUERIDO", message: "El seguimiento indicado no es válido." });
 
   const connection = await pool.getConnection();
-
   try {
     await connection.beginTransaction();
-
     const [rows] = await connection.query(
-      `
-      SELECT
-        id_seguimiento,
-        IdAlumno,
-        IdUsuarioResponsable,
-        Status,
-        FechaApertura,
-        ComentarioApertura,
-        FechaCierre,
-        ComentarioCierre
-      FROM alumnos_seguimientos
-      WHERE id_seguimiento = ?
-      LIMIT 1
-      FOR UPDATE
-      `,
+      `SELECT id_seguimiento, IdAlumno, IdUsuarioResponsable, Status, FechaApertura, ComentarioApertura, FechaCierre, ComentarioCierre
+       FROM alumnos_seguimientos WHERE id_seguimiento = ? LIMIT 1 FOR UPDATE`,
       [idSeguimiento]
     );
-
-    if (!rows.length) {
-      await connection.rollback();
-      return res.status(404).json({
-        ok: false,
-        code: "SEGUIMIENTO_NO_ENCONTRADO",
-        message: "No encontramos ese seguimiento."
-      });
-    }
-
+    if (!rows.length) { await connection.rollback(); return res.status(404).json({ ok: false, code: "SEGUIMIENTO_NO_ENCONTRADO", message: "No encontramos ese seguimiento." }); }
     const antes = rows[0];
-
-    const [detalles] = await connection.query(
-      `
-      SELECT *
-      FROM alumnos_seguimiento_detalle
-      WHERE id_seguimiento = ?
-      ORDER BY FechaRegistro ASC, id_detalle ASC
-      `,
-      [idSeguimiento]
-    );
-
-    await registrarAuditoria(
-      connection,
-      req,
-      "SEGUIMIENTO_ELIMINADO",
-      idSeguimiento,
-      {
-        seguimiento: antes,
-        detalles
-      },
-      null
-    );
-
-    await connection.query(
-      `
-      DELETE FROM alumnos_seguimientos
-      WHERE id_seguimiento = ?
-      `,
-      [idSeguimiento]
-    );
-
+    const [detalles] = await connection.query(`SELECT * FROM alumnos_seguimiento_detalle WHERE id_seguimiento = ? ORDER BY FechaRegistro ASC, id_detalle ASC`, [idSeguimiento]);
+    await registrarAuditoria(connection, req, "SEGUIMIENTO_ELIMINADO", idSeguimiento, { seguimiento: antes, detalles }, null);
+    await connection.query(`DELETE FROM alumnos_seguimientos WHERE id_seguimiento = ?`, [idSeguimiento]);
     await connection.commit();
-
-    return res.json({
-      ok: true,
-      message: "Seguimiento eliminado correctamente.",
-      data: {
-        id_seguimiento: idSeguimiento
-      }
-    });
+    return res.json({ ok: true, message: "Seguimiento eliminado correctamente.", data: { id_seguimiento: idSeguimiento } });
   } catch (error) {
-    try {
-      await connection.rollback();
-    } catch {
-      // Conserva el error original.
-    }
-
-    console.error("[CRUD SEGUIMIENTOS] Error eliminando", {
-      id_seguimiento: idSeguimiento,
-      id_usuario: req.auth?.id_usuario,
-      message: error?.message,
-      code: error?.code
-    });
-
-    return res.status(500).json({
-      ok: false,
-      code: "ERROR_ELIMINANDO_SEGUIMIENTO",
-      message: "No pudimos eliminar el seguimiento."
-    });
-  } finally {
-    connection.release();
-  }
+    try { await connection.rollback(); } catch {}
+    console.error("[CRUD SEGUIMIENTOS] Error eliminando", { id_seguimiento: idSeguimiento, id_usuario: req.auth?.id_usuario, message: error?.message, code: error?.code });
+    return res.status(500).json({ ok: false, code: "ERROR_ELIMINANDO_SEGUIMIENTO", message: "No pudimos eliminar el seguimiento." });
+  } finally { connection.release(); }
 });
 
 module.exports = router;
