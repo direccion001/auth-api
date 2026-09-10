@@ -57,7 +57,7 @@ function permitir(req, res) {
 
 async function usuarioValido(idUsuario) {
   const [rows] = await pool.query(
-    "SELECT `ID Usuario` FROM USUARIOS WHERE `ID Usuario` = ? AND Status = 'Activo' AND Rol IN ('Admin','Directivo') LIMIT 1",
+    "SELECT `ID Usuario` FROM USUARIOS WHERE `ID Usuario` = ? AND Status = 'Activo' AND LOWER(TRIM(Rol)) IN ('admin','directivo') LIMIT 1",
     [idUsuario]
   );
   return rows.length > 0;
@@ -90,7 +90,7 @@ function validarCampos(body, actual = null) {
   const comentario = tiene(body, "comentario") || !actual ? texto(body.comentario) : actual.Comentario;
   const requiereRaw = tiene(body, "requiere_proximo_seguimiento") ? bool(body.requiere_proximo_seguimiento) : Boolean(actual?.RequiereProximoSeguimiento);
   if (requiereRaw === null) return { error: [400, "PROXIMO_SEGUIMIENTO_INVALIDO", "Indica si este registro requiere un próximo seguimiento."] };
-  let fechaProxima = requiereRaw ? (tiene(body, "fecha_proximo_seguimiento") || !actual ? fecha(body.fecha_proximo_seguimiento) : actual.FechaProximoSeguimiento) : null;
+  const fechaProxima = requiereRaw ? (tiene(body, "fecha_proximo_seguimiento") || !actual ? fecha(body.fecha_proximo_seguimiento) : actual.FechaProximoSeguimiento) : null;
   if (requiereRaw && fechaProxima === undefined) return { error: [400, "FECHA_PROXIMO_SEGUIMIENTO_INVALIDA", "Selecciona una fecha válida para el próximo seguimiento."] };
   if (requiereRaw && !fechaProxima) return { error: [400, "FECHA_PROXIMO_SEGUIMIENTO_REQUERIDA", "Selecciona la fecha del próximo seguimiento."] };
   const visibleRaw = tiene(body, "visible_cliente") ? bool(body.visible_cliente) : (actual ? Boolean(actual.VisibleCliente) : true);
@@ -108,7 +108,6 @@ function sendValidation(res, result) {
 router.post("/", async (req, res, next) => {
   if (!tiene(req.body, "id_usuario") && !tiene(req.body, "fecha_registro")) return next();
   if (!permitir(req, res)) return;
-
   const idSeguimiento = texto(req.body?.id_seguimiento);
   if (!idSeguimiento) return res.status(400).json({ ok: false, code: "SEGUIMIENTO_REQUERIDO", message: "Selecciona el seguimiento al que pertenece este registro." });
   const campos = validarCampos(req.body);
@@ -125,19 +124,8 @@ router.post("/", async (req, res, next) => {
     const [seguimientos] = await connection.query("SELECT id_seguimiento, Status FROM alumnos_seguimientos WHERE id_seguimiento = ? LIMIT 1 FOR UPDATE", [idSeguimiento]);
     if (!seguimientos.length) { await connection.rollback(); return res.status(404).json({ ok: false, code: "SEGUIMIENTO_NO_ENCONTRADO", message: "No encontramos ese seguimiento." }); }
     if (seguimientos[0].Status === "Cerrado") { await connection.rollback(); return res.status(409).json({ ok: false, code: "SEGUIMIENTO_CERRADO", message: "No puedes agregar registros a un seguimiento cerrado." }); }
-
-    const despues = {
-      id_detalle: idDetalle, id_seguimiento: idSeguimiento, IdUsuario: idUsuario, FechaRegistro: fechaRegistro,
-      TipoRegistro: campos.tipo, FormaContacto: campos.forma, ResultadoContacto: campos.resultado,
-      Comentario: campos.comentario, RequiereProximoSeguimiento: campos.requiere ? 1 : 0,
-      FechaProximoSeguimiento: campos.fechaProxima, VisibleCliente: campos.visible ? 1 : 0
-    };
-    await connection.query(
-      `INSERT INTO alumnos_seguimiento_detalle
-       (id_detalle, id_seguimiento, IdUsuario, FechaRegistro, TipoRegistro, FormaContacto, ResultadoContacto, Comentario, RequiereProximoSeguimiento, FechaProximoSeguimiento, VisibleCliente)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [despues.id_detalle, despues.id_seguimiento, despues.IdUsuario, despues.FechaRegistro, despues.TipoRegistro, despues.FormaContacto, despues.ResultadoContacto, despues.Comentario, despues.RequiereProximoSeguimiento, despues.FechaProximoSeguimiento, despues.VisibleCliente]
-    );
+    const despues = { id_detalle: idDetalle, id_seguimiento: idSeguimiento, IdUsuario: idUsuario, FechaRegistro: fechaRegistro, TipoRegistro: campos.tipo, FormaContacto: campos.forma, ResultadoContacto: campos.resultado, Comentario: campos.comentario, RequiereProximoSeguimiento: campos.requiere ? 1 : 0, FechaProximoSeguimiento: campos.fechaProxima, VisibleCliente: campos.visible ? 1 : 0 };
+    await connection.query(`INSERT INTO alumnos_seguimiento_detalle (id_detalle, id_seguimiento, IdUsuario, FechaRegistro, TipoRegistro, FormaContacto, ResultadoContacto, Comentario, RequiereProximoSeguimiento, FechaProximoSeguimiento, VisibleCliente) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [despues.id_detalle, despues.id_seguimiento, despues.IdUsuario, despues.FechaRegistro, despues.TipoRegistro, despues.FormaContacto, despues.ResultadoContacto, despues.Comentario, despues.RequiereProximoSeguimiento, despues.FechaProximoSeguimiento, despues.VisibleCliente]);
     await auditoria(connection, req, "SEGUIMIENTO_DETALLE_CREADO", idDetalle, null, despues);
     const creado = await consultar(connection, idDetalle);
     await connection.commit();
@@ -154,45 +142,22 @@ router.patch("/:id_detalle", async (req, res, next) => {
   if (!permitir(req, res)) return;
   const idDetalle = texto(req.params.id_detalle);
   if (!idDetalle) return res.status(400).json({ ok: false, code: "DETALLE_REQUERIDO", message: "El registro indicado no es válido." });
-
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const [rows] = await connection.query(
-      `SELECT d.*, s.Status AS StatusSeguimiento FROM alumnos_seguimiento_detalle d
-       INNER JOIN alumnos_seguimientos s ON s.id_seguimiento = d.id_seguimiento
-       WHERE d.id_detalle = ? LIMIT 1 FOR UPDATE`,
-      [idDetalle]
-    );
+    const [rows] = await connection.query(`SELECT d.*, s.Status AS StatusSeguimiento FROM alumnos_seguimiento_detalle d INNER JOIN alumnos_seguimientos s ON s.id_seguimiento = d.id_seguimiento WHERE d.id_detalle = ? LIMIT 1 FOR UPDATE`, [idDetalle]);
     if (!rows.length) { await connection.rollback(); return res.status(404).json({ ok: false, code: "DETALLE_NO_ENCONTRADO", message: "No encontramos ese registro de seguimiento." }); }
     const actual = rows[0];
     if (actual.StatusSeguimiento === "Cerrado") { await connection.rollback(); return res.status(409).json({ ok: false, code: "SEGUIMIENTO_CERRADO", message: "No puedes modificar el historial de un seguimiento cerrado." }); }
     const campos = validarCampos(req.body, actual);
     if (sendValidation(res, campos)) { await connection.rollback(); return; }
-
     const idUsuario = tiene(req.body, "id_usuario") ? (texto(req.body.id_usuario) || String(req.auth.id_usuario)) : String(actual.IdUsuario);
     const fechaRegistro = tiene(req.body, "fecha_registro") ? fechaHora(req.body.fecha_registro) : actual.FechaRegistro;
     if (!fechaRegistro) { await connection.rollback(); return res.status(400).json({ ok: false, code: "FECHA_REGISTRO_INVALIDA", message: "Selecciona una fecha y hora válidas para el registro." }); }
     if (!(await usuarioValido(idUsuario))) { await connection.rollback(); return res.status(400).json({ ok: false, code: "USUARIO_REGISTRO_INVALIDO", message: "Selecciona un Admin o Directivo activo." }); }
-
-    const antes = {
-      id_detalle: actual.id_detalle, id_seguimiento: actual.id_seguimiento, IdUsuario: actual.IdUsuario,
-      FechaRegistro: actual.FechaRegistro, TipoRegistro: actual.TipoRegistro, FormaContacto: actual.FormaContacto,
-      ResultadoContacto: actual.ResultadoContacto, Comentario: actual.Comentario,
-      RequiereProximoSeguimiento: actual.RequiereProximoSeguimiento,
-      FechaProximoSeguimiento: actual.FechaProximoSeguimiento, VisibleCliente: actual.VisibleCliente
-    };
-    const despues = {
-      ...antes, IdUsuario: idUsuario, FechaRegistro: fechaRegistro, TipoRegistro: campos.tipo,
-      FormaContacto: campos.forma, ResultadoContacto: campos.resultado, Comentario: campos.comentario,
-      RequiereProximoSeguimiento: campos.requiere ? 1 : 0, FechaProximoSeguimiento: campos.fechaProxima,
-      VisibleCliente: campos.visible ? 1 : 0
-    };
-
-    await connection.query(
-      `UPDATE alumnos_seguimiento_detalle SET IdUsuario = ?, FechaRegistro = ?, TipoRegistro = ?, FormaContacto = ?, ResultadoContacto = ?, Comentario = ?, RequiereProximoSeguimiento = ?, FechaProximoSeguimiento = ?, VisibleCliente = ? WHERE id_detalle = ?`,
-      [despues.IdUsuario, despues.FechaRegistro, despues.TipoRegistro, despues.FormaContacto, despues.ResultadoContacto, despues.Comentario, despues.RequiereProximoSeguimiento, despues.FechaProximoSeguimiento, despues.VisibleCliente, idDetalle]
-    );
+    const antes = { id_detalle: actual.id_detalle, id_seguimiento: actual.id_seguimiento, IdUsuario: actual.IdUsuario, FechaRegistro: actual.FechaRegistro, TipoRegistro: actual.TipoRegistro, FormaContacto: actual.FormaContacto, ResultadoContacto: actual.ResultadoContacto, Comentario: actual.Comentario, RequiereProximoSeguimiento: actual.RequiereProximoSeguimiento, FechaProximoSeguimiento: actual.FechaProximoSeguimiento, VisibleCliente: actual.VisibleCliente };
+    const despues = { ...antes, IdUsuario: idUsuario, FechaRegistro: fechaRegistro, TipoRegistro: campos.tipo, FormaContacto: campos.forma, ResultadoContacto: campos.resultado, Comentario: campos.comentario, RequiereProximoSeguimiento: campos.requiere ? 1 : 0, FechaProximoSeguimiento: campos.fechaProxima, VisibleCliente: campos.visible ? 1 : 0 };
+    await connection.query(`UPDATE alumnos_seguimiento_detalle SET IdUsuario = ?, FechaRegistro = ?, TipoRegistro = ?, FormaContacto = ?, ResultadoContacto = ?, Comentario = ?, RequiereProximoSeguimiento = ?, FechaProximoSeguimiento = ?, VisibleCliente = ? WHERE id_detalle = ?`, [despues.IdUsuario, despues.FechaRegistro, despues.TipoRegistro, despues.FormaContacto, despues.ResultadoContacto, despues.Comentario, despues.RequiereProximoSeguimiento, despues.FechaProximoSeguimiento, despues.VisibleCliente, idDetalle]);
     await auditoria(connection, req, "SEGUIMIENTO_DETALLE_ACTUALIZADO", idDetalle, antes, despues);
     const actualizado = await consultar(connection, idDetalle);
     await connection.commit();
