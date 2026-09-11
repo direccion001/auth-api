@@ -22,30 +22,10 @@ function tiene(objeto, campo) {
   return Object.prototype.hasOwnProperty.call(objeto || {}, campo);
 }
 
-function tieneExamenEscritoAplicado(prospecto) {
-  const tieneFecha = prospecto?.fecha_hora_evaluacion != null;
-  const tieneResultado = [
-    prospecto?.promedio_total,
-    prospecto?.score_principiante,
-    prospecto?.score_intermedio,
-    prospecto?.score_avanzado
-  ].some((valor) => valor != null);
-
-  return tieneFecha && tieneResultado;
-}
-
 async function buscarProspecto(idAppsheet, req) {
   const params = [idAppsheet];
   let sql = `
-    SELECT
-      id_evaluacion,
-      id_plantel,
-      status,
-      fecha_hora_evaluacion,
-      promedio_total,
-      score_principiante,
-      score_intermedio,
-      score_avanzado
+    SELECT id_evaluacion, id_plantel, status
     FROM Examenes_Evaluacion
     WHERE id_appsheet = ?
   `;
@@ -149,25 +129,13 @@ router.patch("/:id_appsheet", async (req, res, next) => {
           });
         }
 
-        const statusEsperado = tieneExamenEscritoAplicado(actual)
-          ? STATUS_FALTA_EXAMEN_ORAL
-          : STATUS_FALTA_EXAMEN_ESCRITO;
-
-        if (statusSolicitado !== statusEsperado) {
-          return res.status(409).json({
-            ok: false,
-            code: "STATUS_REAPERTURA_NO_CORRESPONDE",
-            message:
-              statusEsperado === STATUS_FALTA_EXAMEN_ORAL
-                ? `El examen escrito ya tiene fecha de aplicación y resultados. La evaluación debe continuar en ${STATUS_FALTA_EXAMEN_ORAL}.`
-                : `No existe evidencia completa de examen escrito aplicado. La evaluación debe continuar en ${STATUS_FALTA_EXAMEN_ESCRITO}.`,
-            status_permitido: statusEsperado
-          });
-        }
-
+        // Desde "0 No aplica" el usuario puede decidir si desea repetir
+        // el examen escrito o continuar directamente con el examen oral.
+        // No se borran resultados ni fechas previas: el status únicamente
+        // representa el siguiente paso operativo elegido.
         await pool.query(
           "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
-          [statusEsperado, idAppsheet]
+          [statusSolicitado, idAppsheet]
         );
 
         delete body.status;
