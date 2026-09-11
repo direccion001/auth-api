@@ -9,6 +9,7 @@ router.use(requireAuth);
 
 const STATUS_NO_APLICA = "0 No aplica";
 const STATUS_FALTA_EXAMEN_ESCRITO = "1 Falta examen escrito";
+const STATUS_FALTA_EXAMEN_ORAL = "2 Falta examen oral";
 const STATUS_NIVEL_ASIGNADO_CANONICO = "4 Nivel asignado";
 const STATUS_NIVEL_ASIGNADO_COMPAT = "4 Nivel Asignado";
 
@@ -21,10 +22,30 @@ function tiene(objeto, campo) {
   return Object.prototype.hasOwnProperty.call(objeto || {}, campo);
 }
 
+function tieneExamenEscritoAplicado(prospecto) {
+  const tieneFecha = prospecto?.fecha_hora_evaluacion != null;
+  const tieneResultado = [
+    prospecto?.promedio_total,
+    prospecto?.score_principiante,
+    prospecto?.score_intermedio,
+    prospecto?.score_avanzado
+  ].some((valor) => valor != null);
+
+  return tieneFecha && tieneResultado;
+}
+
 async function buscarProspecto(idAppsheet, req) {
   const params = [idAppsheet];
   let sql = `
-    SELECT id_evaluacion, id_plantel, status
+    SELECT
+      id_evaluacion,
+      id_plantel,
+      status,
+      fecha_hora_evaluacion,
+      promedio_total,
+      score_principiante,
+      score_intermedio,
+      score_avanzado
     FROM Examenes_Evaluacion
     WHERE id_appsheet = ?
   `;
@@ -112,24 +133,48 @@ router.patch("/:id_appsheet", async (req, res, next) => {
       };
     }
 
-    if (solicitaStatus && String(body.status || "").trim() === STATUS_FALTA_EXAMEN_ESCRITO) {
-      if (codigoActual !== 0) {
-        return res.status(409).json({
-          ok: false,
-          code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
-          message: `Solo puede regresar a ${STATUS_FALTA_EXAMEN_ESCRITO} desde ${STATUS_NO_APLICA}.`
-        });
-      }
+    if (solicitaStatus) {
+      const statusSolicitado = String(body.status || "").trim();
+      const esReapertura = [
+        STATUS_FALTA_EXAMEN_ESCRITO,
+        STATUS_FALTA_EXAMEN_ORAL
+      ].includes(statusSolicitado);
 
-      await pool.query(
-        "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
-        [STATUS_FALTA_EXAMEN_ESCRITO, idAppsheet]
-      );
+      if (esReapertura) {
+        if (codigoActual !== 0) {
+          return res.status(409).json({
+            ok: false,
+            code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
+            message: `Solo puede reabrirse la evaluación desde ${STATUS_NO_APLICA}.`
+          });
+        }
 
-      delete body.status;
+        const statusEsperado = tieneExamenEscritoAplicado(actual)
+          ? STATUS_FALTA_EXAMEN_ORAL
+          : STATUS_FALTA_EXAMEN_ESCRITO;
 
-      if (Object.keys(body).length === 0) {
-        return responderProspecto(idAppsheet, res);
+        if (statusSolicitado !== statusEsperado) {
+          return res.status(409).json({
+            ok: false,
+            code: "STATUS_REAPERTURA_NO_CORRESPONDE",
+            message:
+              statusEsperado === STATUS_FALTA_EXAMEN_ORAL
+                ? `El examen escrito ya tiene fecha de aplicación y resultados. La evaluación debe continuar en ${STATUS_FALTA_EXAMEN_ORAL}.`
+                : `No existe evidencia completa de examen escrito aplicado. La evaluación debe continuar en ${STATUS_FALTA_EXAMEN_ESCRITO}.`,
+            status_permitido: statusEsperado
+          });
+        }
+
+        await pool.query(
+          "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
+          [statusEsperado, idAppsheet]
+        );
+
+        delete body.status;
+
+        if (Object.keys(body).length === 0) {
+          return responderProspecto(idAppsheet, res);
+        }
       }
     }
 
