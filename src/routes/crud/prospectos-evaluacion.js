@@ -125,6 +125,8 @@ router.patch("/:id_appsheet", async (req, res, next) => {
           });
         }
 
+        // Reapertura manual: se puede repetir el escrito o continuar al oral.
+        // Los resultados y fechas previos se conservan.
         await pool.query(
           "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
           [statusSolicitado, idAppsheet]
