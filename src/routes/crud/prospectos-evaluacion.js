@@ -9,9 +9,10 @@ router.use(requireAuth);
 
 const STATUS_NO_APLICA = "0 No aplica";
 const STATUS_FALTA_EXAMEN_ESCRITO = "1 Falta examen escrito";
+const STATUS_FALTA_EXAMEN_ORAL = "2 Falta examen oral";
 const STATUS_NIVEL_ASIGNADO_CANONICO = "4 Nivel asignado";
 const STATUS_NIVEL_ASIGNADO_COMPAT = "4 Nivel Asignado";
-const CODIGOS_RESTAURABLES_DESDE_NO_APLICA = new Set([1, 3, 4]);
+const CODIGOS_RESTAURABLES_DESDE_NO_APLICA = new Set([1, 2, 3, 4]);
 
 function statusCode(value) {
   const match = String(value ?? "").trim().match(/^(\d+)/);
@@ -22,10 +23,30 @@ function tiene(objeto, campo) {
   return Object.prototype.hasOwnProperty.call(objeto || {}, campo);
 }
 
+function tieneExamenEscritoAplicado(prospecto) {
+  const tieneFecha = prospecto?.fecha_hora_evaluacion != null;
+  const tieneResultado = [
+    prospecto?.promedio_total,
+    prospecto?.score_principiante,
+    prospecto?.score_intermedio,
+    prospecto?.score_avanzado
+  ].some((valor) => valor != null);
+
+  return tieneFecha && tieneResultado;
+}
+
 async function buscarProspecto(idAppsheet, req) {
   const params = [idAppsheet];
   let sql = `
-    SELECT id_evaluacion, id_plantel, status
+    SELECT
+      id_evaluacion,
+      id_plantel,
+      status,
+      fecha_hora_evaluacion,
+      promedio_total,
+      score_principiante,
+      score_intermedio,
+      score_avanzado
     FROM Examenes_Evaluacion
     WHERE id_appsheet = ?
   `;
@@ -116,6 +137,15 @@ router.patch("/:id_appsheet", async (req, res, next) => {
       const codigoSolicitado = statusCode(statusSolicitado);
 
       if (codigoActual === 0 && CODIGOS_RESTAURABLES_DESDE_NO_APLICA.has(codigoSolicitado)) {
+        if (codigoSolicitado === 2 && !tieneExamenEscritoAplicado(actual)) {
+          return res.status(409).json({
+            ok: false,
+            code: "EXAMEN_ESCRITO_REQUERIDO",
+            message: `No puede cambiarse a ${STATUS_FALTA_EXAMEN_ORAL} porque todavía no existe un examen escrito aplicado con resultados.`,
+            status_permitido: STATUS_FALTA_EXAMEN_ESCRITO
+          });
+        }
+
         const valorPersistido = codigoSolicitado === 4 ? STATUS_NIVEL_ASIGNADO_CANONICO : statusSolicitado;
         await pool.query(
           "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
@@ -124,22 +154,12 @@ router.patch("/:id_appsheet", async (req, res, next) => {
 
         delete body.status;
         if (Object.keys(body).length === 0) return responderProspecto(idAppsheet, res);
-      } else if (statusSolicitado === STATUS_FALTA_EXAMEN_ESCRITO) {
-        if (codigoActual !== 0) {
-          return res.status(409).json({
-            ok: false,
-            code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
-            message: `Solo puede regresar a ${STATUS_FALTA_EXAMEN_ESCRITO} desde ${STATUS_NO_APLICA}.`
-          });
-        }
-
-        await pool.query(
-          "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
-          [STATUS_FALTA_EXAMEN_ESCRITO, idAppsheet]
-        );
-
-        delete body.status;
-        if (Object.keys(body).length === 0) return responderProspecto(idAppsheet, res);
+      } else if ([STATUS_FALTA_EXAMEN_ESCRITO, STATUS_FALTA_EXAMEN_ORAL].includes(statusSolicitado)) {
+        return res.status(409).json({
+          ok: false,
+          code: "TRANSICION_STATUS_ACADEMICO_NO_PERMITIDA",
+          message: `Solo puede reabrirse la evaluación desde ${STATUS_NO_APLICA}.`
+        });
       }
     }
 
