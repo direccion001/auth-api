@@ -5,17 +5,34 @@ const requireAuth = require("../../middleware/requireAuth");
 const prospectosResponsableRouter = require("./prospectos-responsable");
 const prospectosComentariosRouter = require("./prospectos-comentarios");
 const prospectosEvaluacionRouter = require("./prospectos-evaluacion");
+const prospectosCalificacionesRouter = require("./prospectos-calificaciones");
+const prospectosContactosFechaRouter = require("./prospectos-contactos-fecha");
 const prospectosRouter = require("./prospectos");
 const detalleAsistenciasRouter = require("./detalle-asistencias");
 const seguimientosEstadoRouter = require("./seguimientos-estado");
+const seguimientosLimitesRouter = require("./seguimientos-limites");
 const seguimientosRouter = require("./seguimientos");
+const detallesSeguimientosEdicionRouter = require("./detalles-seguimientos-edicion");
 const detallesSeguimientosRouter = require("./detalles-seguimientos");
 const graduacionesRouter = require("./graduaciones");
 
 const router = express.Router();
 
+// Regla del módulo Prospectos: solo Admin y Directivo pueden modificar.
+router.use("/prospectos", requireAuth, (req, res, next) => {
+  if (!["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) return next();
+  const rol = String(req.auth?.rol || "").trim().toLowerCase();
+  if (rol === "admin" || rol === "directivo") return next();
+
+  return res.status(403).json({
+    ok: false,
+    code: "PROSPECTOS_SOLO_ADMIN_DIRECTIVO",
+    message: "Solo Admin y Directivo pueden modificar Prospectos."
+  });
+});
+
 // Invariante de negocio: una vez inscrito, el status de contacto es terminal.
-// El resto de campos del prospecto continúa siendo editable.
+// El resto de campos del prospecto continúa siendo editable para roles autorizados.
 router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => {
   if (!Object.prototype.hasOwnProperty.call(req.body || {}, "status_contacto")) {
     return next();
@@ -66,10 +83,14 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
 router.use("/prospectos", prospectosResponsableRouter);
 router.use("/prospectos", prospectosComentariosRouter);
 router.use("/prospectos", prospectosEvaluacionRouter);
+router.use("/prospectos", prospectosCalificacionesRouter);
+router.use("/prospectos", prospectosContactosFechaRouter);
 router.use("/prospectos", prospectosRouter);
 router.use("/detalle-asistencias", detalleAsistenciasRouter);
 router.use("/seguimientos", seguimientosEstadoRouter);
+router.use("/seguimientos", seguimientosLimitesRouter);
 router.use("/seguimientos", seguimientosRouter);
+router.use("/detalles-seguimientos", detallesSeguimientosEdicionRouter);
 router.use("/detalles-seguimientos", detallesSeguimientosRouter);
 router.use("/graduaciones", graduacionesRouter);
 
