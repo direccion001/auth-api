@@ -69,10 +69,6 @@ router.patch("/:id_appsheet", async (req, res, next) => {
 
     const codigoActual = statusCode(actual.status);
 
-    // El CRUD ya mergeado compara literalmente contra "4 Nivel Asignado".
-    // Usamos esa variante solo como compatibilidad interna antes de delegar.
-    // El valor persistido final debe seguir siendo el histórico/canónico:
-    // "4 Nivel asignado".
     if (solicitaNivel && codigoActual === 4 && actual.status !== STATUS_NIVEL_ASIGNADO_COMPAT) {
       await pool.query(
         "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
@@ -129,9 +125,6 @@ router.patch("/:id_appsheet", async (req, res, next) => {
           });
         }
 
-        // Desde "0 No aplica" puede elegirse cualquiera de los dos pasos:
-        // repetir el examen escrito o continuar con el examen oral.
-        // Los resultados y fechas existentes se conservan.
         await pool.query(
           "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
           [statusSolicitado, idAppsheet]
