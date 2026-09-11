@@ -129,10 +129,9 @@ router.patch("/:id_appsheet", async (req, res, next) => {
           });
         }
 
-        // Desde "0 No aplica" el usuario puede decidir si desea repetir
-        // el examen escrito o continuar directamente con el examen oral.
-        // No se borran resultados ni fechas previas: el status únicamente
-        // representa el siguiente paso operativo elegido.
+        // Desde "0 No aplica" puede elegirse repetir el examen escrito
+        // o continuar directamente con el examen oral.
+        // No se borran resultados ni fechas previas.
         await pool.query(
           "UPDATE Examenes_Evaluacion SET status = ? WHERE id_appsheet = ?",
           [statusSolicitado, idAppsheet]
