@@ -90,6 +90,19 @@ router.patch("/:id_appsheet", async (req, res, next) => {
 
     const codigoActual = statusCode(actual.status);
 
+    // Cuando ya existe examen escrito y falta el oral, el nivel puede asignarse manualmente.
+    // Si se elimina el nivel, permanece en Falta examen oral.
+    if (solicitaNivel && codigoActual === 2) {
+      const nivel = String(body.nivel_sugerido ?? "").trim() || null;
+      const statusDestino = nivel ? STATUS_NIVEL_ASIGNADO_CANONICO : STATUS_FALTA_EXAMEN_ORAL;
+      await pool.query(
+        "UPDATE Examenes_Evaluacion SET nivel_sugerido = ?, status = ? WHERE id_appsheet = ?",
+        [nivel, statusDestino, idAppsheet]
+      );
+      delete body.nivel_sugerido;
+      if (Object.keys(body).length === 0) return responderProspecto(idAppsheet, res);
+    }
+
     // El CRUD ya mergeado compara literalmente contra "4 Nivel Asignado".
     // Usamos esa variante solo como compatibilidad interna antes de delegar.
     if (solicitaNivel && codigoActual === 4 && actual.status !== STATUS_NIVEL_ASIGNADO_COMPAT) {
@@ -99,7 +112,7 @@ router.patch("/:id_appsheet", async (req, res, next) => {
       );
     }
 
-    if (solicitaNivel) {
+    if (solicitaNivel && codigoActual !== 2) {
       const originalJson = res.json.bind(res);
       res.json = async (payload) => {
         try {
