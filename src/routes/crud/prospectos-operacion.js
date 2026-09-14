@@ -13,6 +13,10 @@ function permitir(req, res) {
   return true;
 }
 
+function tiene(objeto, campo) {
+  return Object.prototype.hasOwnProperty.call(objeto || {}, campo);
+}
+
 function texto(value) {
   const normalized = String(value ?? "").trim();
   return normalized || null;
@@ -45,6 +49,26 @@ async function usuarioResponsableValido(idUsuario) {
     [idUsuario]
   );
   return rows.length > 0;
+}
+
+async function prospectoVisible(idAppsheet, req) {
+  const params = [idAppsheet];
+  let sql = "SELECT * FROM Examenes_Evaluacion WHERE id_appsheet = ?";
+  if (!req.auth.acceso_global) {
+    sql += " AND id_plantel = ?";
+    params.push(req.auth.id_plantel);
+  }
+  sql += " LIMIT 1";
+  const [rows] = await pool.query(sql, params);
+  return rows[0] || null;
+}
+
+async function responderProspecto(idAppsheet, res, message) {
+  const [rows] = await pool.query(
+    "SELECT * FROM vw_company_viewer_prospectos WHERE id_appsheet = ? LIMIT 1",
+    [idAppsheet]
+  );
+  return res.json({ ok: true, message, data: rows[0] || null });
 }
 
 function responderDuplicado(error, res) {
@@ -137,6 +161,63 @@ router.post("/", async (req, res, next) => {
   }
 });
 
+// Compatibilidad para edición: teléfono y correo son alternativos, no obligatorios ambos.
+// Se actualizan aquí y se retiran del body antes de delegar el resto al CRUD existente.
+router.patch("/:id_appsheet", async (req, res, next) => {
+  const body = req.body || {};
+  const tocaTelefono = tiene(body, "telefono");
+  const tocaCorreo = tiene(body, "correo");
+  if (!tocaTelefono && !tocaCorreo) return next();
+  if (!permitir(req, res)) return;
+
+  try {
+    const idAppsheet = String(req.params.id_appsheet || "").trim();
+    const actual = await prospectoVisible(idAppsheet, req);
+    if (!actual) {
+      return res.status(404).json({ ok: false, code: "PROSPECTO_NO_ENCONTRADO", message: "No encontramos el prospecto indicado." });
+    }
+
+    const telefono = tocaTelefono ? texto(body.telefono) : texto(actual.telefono);
+    const correoRaw = tocaCorreo ? correoNormalizado(body.correo) : correoNormalizado(actual.correo);
+    const correo = correoRaw || null;
+
+    if (!telefono && !correo) {
+      return res.status(400).json({ ok: false, code: "CONTACTO_REQUERIDO", message: "El prospecto debe conservar al menos un teléfono o correo electrónico." });
+    }
+    if (correo && !correoValido(correo)) {
+      return res.status(400).json({ ok: false, code: "CORREO_INVALIDO", message: "Ingresa un correo electrónico válido." });
+    }
+
+    const updates = [];
+    const params = [];
+    if (tocaTelefono) {
+      updates.push("telefono = ?");
+      params.push(telefono);
+      delete body.telefono;
+    }
+    if (tocaCorreo) {
+      updates.push("correo = ?");
+      params.push(correo);
+      delete body.correo;
+    }
+
+    if (updates.length) {
+      params.push(idAppsheet);
+      await pool.query(`UPDATE Examenes_Evaluacion SET ${updates.join(", ")} WHERE id_appsheet = ?`, params);
+    }
+
+    if (Object.keys(body).length === 0) {
+      return responderProspecto(idAppsheet, res, "Datos de contacto actualizados correctamente.");
+    }
+
+    return next();
+  } catch (error) {
+    console.error("[CRUD PROSPECTOS] Error actualizando medios de contacto", error);
+    if (responderDuplicado(error, res)) return;
+    return res.status(500).json({ ok: false, code: "ERROR_ACTUALIZANDO_CONTACTO_PROSPECTO", message: "No pudimos actualizar los medios de contacto del prospecto." });
+  }
+});
+
 router.patch("/:id_appsheet/plantel", async (req, res) => {
   if (!permitir(req, res)) return;
   if (!req.auth.acceso_global) {
@@ -166,12 +247,7 @@ router.patch("/:id_appsheet/plantel", async (req, res) => {
       [idPlantel, idAppsheet]
     );
 
-    const [rows] = await pool.query(
-      "SELECT * FROM vw_company_viewer_prospectos WHERE id_appsheet = ? LIMIT 1",
-      [idAppsheet]
-    );
-
-    return res.json({ ok: true, message: "Plantel actualizado correctamente.", data: rows[0] || null });
+    return responderProspecto(idAppsheet, res, "Plantel actualizado correctamente.");
   } catch (error) {
     console.error("[CRUD PROSPECTOS] Error cambiando plantel", error);
     return res.status(500).json({ ok: false, code: "ERROR_CAMBIANDO_PLANTEL", message: "No pudimos cambiar el plantel del prospecto." });
