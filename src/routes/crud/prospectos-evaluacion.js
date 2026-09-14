@@ -24,15 +24,16 @@ function tiene(objeto, campo) {
 }
 
 function tieneExamenEscritoAplicado(prospecto) {
-  const tieneFecha = prospecto?.fecha_hora_evaluacion != null;
-  const tieneResultado = [
+  return [
     prospecto?.promedio_total,
     prospecto?.score_principiante,
     prospecto?.score_intermedio,
     prospecto?.score_avanzado
-  ].some((valor) => valor != null);
-
-  return tieneFecha && tieneResultado;
+  ].some((valor) => {
+    if (valor === null || valor === undefined || valor === "") return false;
+    const numero = Number(valor);
+    return Number.isFinite(numero) && numero > 0;
+  });
 }
 
 async function buscarProspecto(idAppsheet, req) {
@@ -154,7 +155,7 @@ router.patch("/:id_appsheet", async (req, res, next) => {
           return res.status(409).json({
             ok: false,
             code: "EXAMEN_ESCRITO_REQUERIDO",
-            message: `No puede cambiarse a ${STATUS_FALTA_EXAMEN_ORAL} porque todavía no existe un examen escrito aplicado con resultados.`,
+            message: `No puede cambiarse a ${STATUS_FALTA_EXAMEN_ORAL} porque todavía no existen resultados escritos mayores a cero.`,
             status_permitido: STATUS_FALTA_EXAMEN_ESCRITO
           });
         }
