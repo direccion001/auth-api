@@ -20,6 +20,34 @@ const graduacionesRouter = require("./graduaciones");
 
 const router = express.Router();
 
+function tiene(obj, campo) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, campo);
+}
+
+function normalizarTexto(valor) {
+  if (valor === null || valor === undefined) return null;
+  const texto = String(valor).trim();
+  return texto || null;
+}
+
+function tieneResultadoEscrito(prospecto) {
+  return [
+    prospecto.score_principiante,
+    prospecto.score_intermedio,
+    prospecto.score_avanzado,
+    prospecto.promedio_total
+  ].some((valor) => {
+    const numero = Number(valor);
+    return Number.isFinite(numero) && numero > 0;
+  });
+}
+
+function statusSinNivel(prospecto) {
+  if (normalizarTexto(prospecto.audio_url)) return "3 Listo para evaluar";
+  if (tieneResultadoEscrito(prospecto)) return "2 Falta examen oral";
+  return "1 Falta examen escrito";
+}
+
 // Regla general del módulo Prospectos: Admin y Directivo modifican todo.
 // Excepciones operativas de plantel: crear prospectos y crear/editar sus propios contactos.
 router.use("/prospectos", requireAuth, (req, res, next) => {
@@ -89,6 +117,137 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
       message: "No pudimos validar el status del prospecto."
     });
   }
+});
+
+// Grupo propuesto y nivel quedan sellados al inscribir.
+// Si se elimina el último nivel antes de inscripción, el status académico se deriva de la evidencia disponible.
+router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => {
+  const body = req.body || {};
+  const tocaGrupo = tiene(body, "id_grupo_propuesto");
+  const tocaNivel = tiene(body, "nivel_sugerido");
+  if (!tocaGrupo && !tocaNivel) return next();
+
+  try {
+    const idAppsheet = String(req.params.id_appsheet || "").trim();
+    const params = [idAppsheet];
+    let sql = `
+      SELECT status_contacto, status, nivel_sugerido, audio_url,
+             score_principiante, score_intermedio, score_avanzado, promedio_total
+      FROM Examenes_Evaluacion
+      WHERE id_appsheet = ?
+    `;
+
+    if (!req.auth.acceso_global) {
+      sql += " AND id_plantel = ?";
+      params.push(req.auth.id_plantel);
+    }
+    sql += " LIMIT 1";
+
+    const [rows] = await pool.query(sql, params);
+    const prospecto = rows[0];
+    if (!prospecto) {
+      return res.status(404).json({
+        ok: false,
+        code: "PROSPECTO_NO_ENCONTRADO",
+        message: "No encontramos el prospecto indicado."
+      });
+    }
+
+    if (String(prospecto.status_contacto || "").trim() === "2 Inscrito") {
+      return res.status(409).json({
+        ok: false,
+        code: "PROSPECTO_INSCRITO_CAMPOS_SELLADOS",
+        message: "Grupo propuesto y nivel asignado quedan sellados una vez inscrito el prospecto."
+      });
+    }
+
+    const nivelSolicitado = tocaNivel ? normalizarTexto(body.nivel_sugerido) : undefined;
+    const soloQuitaNivel = tocaNivel
+      && nivelSolicitado === null
+      && Object.keys(body).every((campo) => campo === "nivel_sugerido");
+
+    if (!soloQuitaNivel) return next();
+
+    const statusActual = String(prospecto.status || "").trim();
+    const statusPermitidos = new Set([
+      "0 No aplica",
+      "2 Falta examen oral",
+      "3 Listo para evaluar",
+      "4 Nivel Asignado"
+    ]);
+
+    if (!statusPermitidos.has(statusActual)) {
+      return res.status(409).json({
+        ok: false,
+        code: "NIVEL_NO_EDITABLE",
+        message: "El nivel no puede modificarse en el status académico actual."
+      });
+    }
+
+    const statusDerivado = statusSinNivel(prospecto);
+    await pool.query(
+      `UPDATE Examenes_Evaluacion SET nivel_sugerido = NULL, status = ? WHERE id_appsheet = ?`,
+      [statusDerivado, idAppsheet]
+    );
+
+    const [vista] = await pool.query(
+      `SELECT * FROM vw_company_viewer_prospectos WHERE id_appsheet = ? LIMIT 1`,
+      [idAppsheet]
+    );
+
+    return res.json({
+      ok: true,
+      message: "Nivel eliminado y status académico recalculado correctamente.",
+      data: vista[0] || null
+    });
+  } catch (error) {
+    console.error("[CRUD PROSPECTOS] Error aplicando reglas de grupo/nivel", error);
+    return res.status(500).json({
+      ok: false,
+      code: "ERROR_REGLAS_PROSPECTO",
+      message: "No pudimos aplicar las reglas académicas del prospecto."
+    });
+  }
+});
+
+// Tras una inscripción exitosa con perfil de alumno, el grupo elegido se conserva como grupo propuesto sellado.
+router.post("/prospectos/:id_appsheet/inscribir", requireAuth, async (req, res, next) => {
+  const crearAlumno = [true, 1, "1", "true"].includes(req.body?.crear_alumno);
+  if (!crearAlumno) return next();
+
+  const idAppsheet = String(req.params.id_appsheet || "").trim();
+  const idGrupo = normalizarTexto(req.body?.id_grupo);
+  const originalJson = res.json.bind(res);
+  let procesado = false;
+
+  res.json = async (payload) => {
+    if (procesado) return originalJson(payload);
+    procesado = true;
+
+    if (res.statusCode >= 200 && res.statusCode < 300 && payload?.ok) {
+      try {
+        await pool.query(
+          `UPDATE Examenes_Evaluacion SET id_grupo_propuesto = ? WHERE id_appsheet = ?`,
+          [idGrupo, idAppsheet]
+        );
+        if (payload?.data && typeof payload.data === "object") {
+          payload.data.id_grupo_propuesto = idGrupo;
+        }
+      } catch (error) {
+        console.error("[CRUD PROSPECTOS] Error sellando grupo de inscripción", error);
+        res.status(500);
+        return originalJson({
+          ok: false,
+          code: "ERROR_SELLANDO_GRUPO_INSCRIPCION",
+          message: "La inscripción se registró, pero no pudimos sellar el grupo propuesto."
+        });
+      }
+    }
+
+    return originalJson(payload);
+  };
+
+  return next();
 });
 
 router.use("/prospectos", prospectosResponsableRouter);
