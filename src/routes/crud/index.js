@@ -7,6 +7,8 @@ const prospectosComentariosRouter = require("./prospectos-comentarios");
 const prospectosEvaluacionRouter = require("./prospectos-evaluacion");
 const prospectosCalificacionesRouter = require("./prospectos-calificaciones");
 const prospectosContactosFechaRouter = require("./prospectos-contactos-fecha");
+const prospectosInscripcionRouter = require("./prospectos-inscripcion");
+const prospectosOperacionRouter = require("./prospectos-operacion");
 const prospectosRouter = require("./prospectos");
 const detalleAsistenciasRouter = require("./detalle-asistencias");
 const seguimientosEstadoRouter = require("./seguimientos-estado");
@@ -18,16 +20,25 @@ const graduacionesRouter = require("./graduaciones");
 
 const router = express.Router();
 
-// Regla del módulo Prospectos: solo Admin y Directivo pueden modificar.
+// Regla general del módulo Prospectos: Admin y Directivo modifican todo.
+// Excepciones operativas de plantel: crear prospectos y crear/editar sus propios contactos.
 router.use("/prospectos", requireAuth, (req, res, next) => {
   if (!["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) return next();
+
   const rol = String(req.auth?.rol || "").trim().toLowerCase();
-  if (rol === "admin" || rol === "directivo") return next();
+  if (["admin", "administrador", "directivo"].includes(rol)) return next();
+
+  const path = req.path || "/";
+  const esAltaProspecto = req.method === "POST" && path === "/";
+  const esContactoPlantel = ["POST", "PATCH"].includes(req.method)
+    && /^\/[^/]+\/contactos(?:\/[^/]+)?$/.test(path);
+
+  if (!req.auth?.acceso_global && (esAltaProspecto || esContactoPlantel)) return next();
 
   return res.status(403).json({
     ok: false,
     code: "PROSPECTOS_SOLO_ADMIN_DIRECTIVO",
-    message: "Solo Admin y Directivo pueden modificar Prospectos."
+    message: "Solo Admin y Directivo pueden realizar esta modificación en Prospectos."
   });
 });
 
@@ -85,6 +96,8 @@ router.use("/prospectos", prospectosComentariosRouter);
 router.use("/prospectos", prospectosEvaluacionRouter);
 router.use("/prospectos", prospectosCalificacionesRouter);
 router.use("/prospectos", prospectosContactosFechaRouter);
+router.use("/prospectos", prospectosInscripcionRouter);
+router.use("/prospectos", prospectosOperacionRouter);
 router.use("/prospectos", prospectosRouter);
 router.use("/detalle-asistencias", detalleAsistenciasRouter);
 router.use("/seguimientos", seguimientosEstadoRouter);

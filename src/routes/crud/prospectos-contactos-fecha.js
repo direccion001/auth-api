@@ -61,7 +61,7 @@ async function prospectoVisible(idAppsheet, req) {
 
 async function usuarioValido(idUsuario) {
   const [rows] = await pool.query(
-    "SELECT `ID Usuario` FROM USUARIOS WHERE `ID Usuario` = ? AND Status = 'Activo' AND LOWER(TRIM(Rol)) IN ('admin','directivo') LIMIT 1",
+    "SELECT `ID Usuario` FROM USUARIOS WHERE `ID Usuario` = ? AND Status = 'Activo' AND LOWER(TRIM(Rol)) IN ('admin','administrador','directivo') LIMIT 1",
     [idUsuario]
   );
   return rows.length > 0;
@@ -99,10 +99,12 @@ router.post("/:id_appsheet/contactos", async (req, res, next) => {
     const resultado = texto(req.body?.resultado_contacto);
     const descripcion = texto(req.body?.descripcion);
     const fechaProximo = fechaLocal(req.body?.fecha_proximo_seguimiento);
+    const proximaAccion = texto(req.body?.proxima_accion);
     const fechaContacto = req.body?.fecha_hora_contacto ? fechaHoraLocal(req.body.fecha_hora_contacto) : ahoraMexico();
     if (!forma || !resultado || !descripcion) return res.status(400).json({ ok: false, code: "CONTACTO_INCOMPLETO", message: "Forma de contacto, resultado y descripción son obligatorios." });
     if (fechaProximo === undefined) return res.status(400).json({ ok: false, code: "FECHA_PROXIMO_SEGUIMIENTO_INVALIDA", message: "Selecciona una fecha válida para el próximo seguimiento." });
     if (!fechaContacto) return res.status(400).json({ ok: false, code: "FECHA_CONTACTO_INVALIDA", message: "Selecciona una fecha y hora válidas para el contacto." });
+    if (proximaAccion && proximaAccion.length > 255) return res.status(400).json({ ok: false, code: "PROXIMA_ACCION_MUY_LARGA", message: "La próxima acción no puede exceder 255 caracteres." });
 
     let idUsuario = null;
     let esPlantel = 1;
@@ -115,9 +117,9 @@ router.post("/:id_appsheet/contactos", async (req, res, next) => {
     const idContacto = crypto.randomUUID().replace(/-/g, "");
     await pool.query(
       `INSERT INTO contactos_examenes_evaluacion
-       (id_contacto, id_appsheet, id_evaluacion, id_usuario, es_plantel, forma_contacto, resultado_contacto, descripcion, fecha_hora_contacto, fecha_proximo_seguimiento)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [idContacto, idAppsheet, prospecto.id_evaluacion, idUsuario, esPlantel, forma, resultado, descripcion, fechaContacto, fechaProximo]
+       (id_contacto, id_appsheet, id_evaluacion, id_usuario, es_plantel, forma_contacto, resultado_contacto, descripcion, fecha_hora_contacto, fecha_proximo_seguimiento, proxima_accion)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [idContacto, idAppsheet, prospecto.id_evaluacion, idUsuario, esPlantel, forma, resultado, descripcion, fechaContacto, fechaProximo, proximaAccion]
     );
     return responderContacto(idContacto, 201, res);
   } catch (error) {
@@ -141,10 +143,12 @@ router.patch("/:id_appsheet/contactos/:id_contacto", async (req, res, next) => {
     const resultado = Object.prototype.hasOwnProperty.call(body, "resultado_contacto") ? texto(body.resultado_contacto) : actual.resultado_contacto;
     const descripcion = Object.prototype.hasOwnProperty.call(body, "descripcion") ? texto(body.descripcion) : actual.descripcion;
     const fechaProximo = Object.prototype.hasOwnProperty.call(body, "fecha_proximo_seguimiento") ? fechaLocal(body.fecha_proximo_seguimiento) : actual.fecha_proximo_seguimiento;
+    const proximaAccion = Object.prototype.hasOwnProperty.call(body, "proxima_accion") ? texto(body.proxima_accion) : actual.proxima_accion;
     const fechaContacto = fechaHoraLocal(body.fecha_hora_contacto);
     if (!forma || !resultado || !descripcion) return res.status(400).json({ ok: false, code: "CONTACTO_INCOMPLETO", message: "Forma de contacto, resultado y descripción son obligatorios." });
     if (fechaProximo === undefined) return res.status(400).json({ ok: false, code: "FECHA_PROXIMO_SEGUIMIENTO_INVALIDA", message: "Selecciona una fecha válida para el próximo seguimiento." });
     if (!fechaContacto) return res.status(400).json({ ok: false, code: "FECHA_CONTACTO_INVALIDA", message: "Selecciona una fecha y hora válidas para el contacto." });
+    if (proximaAccion && proximaAccion.length > 255) return res.status(400).json({ ok: false, code: "PROXIMA_ACCION_MUY_LARGA", message: "La próxima acción no puede exceder 255 caracteres." });
 
     let idUsuario = actual.id_usuario;
     if (req.auth.acceso_global && Object.prototype.hasOwnProperty.call(body, "id_usuario")) {
@@ -153,8 +157,11 @@ router.patch("/:id_appsheet/contactos/:id_contacto", async (req, res, next) => {
     }
 
     await pool.query(
-      `UPDATE contactos_examenes_evaluacion SET forma_contacto = ?, resultado_contacto = ?, descripcion = ?, fecha_hora_contacto = ?, fecha_proximo_seguimiento = ?, id_usuario = ? WHERE id_contacto = ? AND id_appsheet = ?`,
-      [forma, resultado, descripcion, fechaContacto, fechaProximo, idUsuario, idContacto, idAppsheet]
+      `UPDATE contactos_examenes_evaluacion
+       SET forma_contacto = ?, resultado_contacto = ?, descripcion = ?, fecha_hora_contacto = ?,
+           fecha_proximo_seguimiento = ?, proxima_accion = ?, id_usuario = ?
+       WHERE id_contacto = ? AND id_appsheet = ?`,
+      [forma, resultado, descripcion, fechaContacto, fechaProximo, proximaAccion, idUsuario, idContacto, idAppsheet]
     );
     return responderContacto(idContacto, 200, res);
   } catch (error) {
