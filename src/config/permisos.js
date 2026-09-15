@@ -9,6 +9,7 @@ const MODULOS = {
     "asistencias",
     "calificaciones",
     "prospectos",
+    "alumnos",
     "seguimientos",
     "graduaciones",
     "dashboard"
@@ -18,6 +19,7 @@ const MODULOS = {
     "asistencias",
     "calificaciones",
     "prospectos",
+    "alumnos",
     "seguimientos",
     "graduaciones",
     "dashboard"
