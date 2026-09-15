@@ -210,46 +210,6 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
   }
 });
 
-// Tras una inscripción exitosa con perfil de alumno, el grupo elegido se conserva como grupo propuesto sellado.
-router.post("/prospectos/:id_appsheet/inscribir", requireAuth, async (req, res, next) => {
-  const crearAlumno = [true, 1, "1", "true"].includes(req.body?.crear_alumno);
-  if (!crearAlumno) return next();
-
-  const idAppsheet = String(req.params.id_appsheet || "").trim();
-  const idGrupo = normalizarTexto(req.body?.id_grupo);
-  const originalJson = res.json.bind(res);
-  let procesado = false;
-
-  res.json = async (payload) => {
-    if (procesado) return originalJson(payload);
-    procesado = true;
-
-    if (res.statusCode >= 200 && res.statusCode < 300 && payload?.ok) {
-      try {
-        await pool.query(
-          `UPDATE Examenes_Evaluacion SET id_grupo_propuesto = ? WHERE id_appsheet = ?`,
-          [idGrupo, idAppsheet]
-        );
-        if (payload?.data && typeof payload.data === "object") {
-          payload.data.id_grupo_propuesto = idGrupo;
-        }
-      } catch (error) {
-        console.error("[CRUD PROSPECTOS] Error sellando grupo de inscripción", error);
-        res.status(500);
-        return originalJson({
-          ok: false,
-          code: "ERROR_SELLANDO_GRUPO_INSCRIPCION",
-          message: "La inscripción se registró, pero no pudimos sellar el grupo propuesto."
-        });
-      }
-    }
-
-    return originalJson(payload);
-  };
-
-  return next();
-});
-
 router.use("/prospectos", prospectosResponsableRouter);
 router.use("/prospectos", prospectosComentariosRouter);
 router.use("/prospectos", prospectosEvaluacionRouter);
