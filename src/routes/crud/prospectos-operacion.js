@@ -81,6 +81,29 @@ function responderDuplicado(error, res) {
   return true;
 }
 
+async function responderCorreoDuplicadoAlta(error, res, correo) {
+  if (error?.code !== "ER_DUP_ENTRY" || !correo) return false;
+
+  const [rows] = await pool.query(
+    `SELECT nombre, apellido
+     FROM Examenes_Evaluacion
+     WHERE LOWER(TRIM(correo)) = ?
+     LIMIT 1`,
+    [correo]
+  );
+
+  const existente = rows[0] || null;
+  const nombreCompleto = [existente?.nombre, existente?.apellido].filter(Boolean).join(" ").trim();
+  res.status(409).json({
+    ok: false,
+    code: "CORREO_YA_REGISTRADO",
+    message: nombreCompleto
+      ? `Este correo ya lo tiene el alumno ${nombreCompleto}.`
+      : "Este correo ya está registrado."
+  });
+  return true;
+}
+
 router.post("/", async (req, res, next) => {
   if (!permitir(req, res)) return;
 
@@ -97,9 +120,6 @@ router.post("/", async (req, res, next) => {
 
     if (!nombre) {
       return res.status(400).json({ ok: false, code: "NOMBRE_REQUERIDO", message: "Ingresa el nombre del prospecto." });
-    }
-    if (!telefono && !correo) {
-      return res.status(400).json({ ok: false, code: "CONTACTO_REQUERIDO", message: "Ingresa al menos un teléfono o correo electrónico." });
     }
     if (correo && !correoValido(correo)) {
       return res.status(400).json({ ok: false, code: "CORREO_INVALIDO", message: "Ingresa un correo electrónico válido." });
@@ -156,7 +176,8 @@ router.post("/", async (req, res, next) => {
     });
   } catch (error) {
     console.error("[CRUD PROSPECTOS] Error creando prospecto flexible", error);
-    if (responderDuplicado(error, res)) return;
+    const correo = correoNormalizado(req.body?.correo) || null;
+    if (await responderCorreoDuplicadoAlta(error, res, correo)) return;
     return res.status(500).json({ ok: false, code: "ERROR_CREANDO_PROSPECTO", message: "No pudimos registrar el prospecto." });
   }
 });
