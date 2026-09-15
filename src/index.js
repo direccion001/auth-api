@@ -6,8 +6,11 @@ const authRouter = require("./routes/auth");
 const viewerRouter = require("./routes/viewer");
 const viewerProspectosPrivacyRouter = require("./routes/viewer-prospectos-privacy");
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
+const alumnosViewerRouter = require("./routes/viewer-alumnos");
 const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const graduacionesViewerRouter = require("./routes/viewer-graduaciones");
+const alumnosCrudRouter = require("./routes/crud/alumnos");
+const detallesSeguimientosProximoRouter = require("./routes/crud/detalles-seguimientos-proximo");
 const crudRouter = require("./routes/crud");
 
 const app = express();
@@ -26,10 +29,13 @@ app.get("/", (req, res) => {
 // Rutas
 app.use("/auth", authRouter);
 app.use("/viewer/seguimientos", seguimientosViewerRouter);
+app.use("/viewer/alumnos", alumnosViewerRouter);
 app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer/graduaciones", graduacionesViewerRouter);
 app.use("/viewer", viewerProspectosPrivacyRouter);
 app.use("/viewer", viewerRouter);
+app.use("/crud/alumnos", alumnosCrudRouter);
+app.use("/crud/detalles-seguimientos", detallesSeguimientosProximoRouter);
 app.use("/crud", crudRouter);
 
 // 404
