@@ -301,6 +301,7 @@ router.post("/:id_appsheet/inscribir", async (req, res) => {
 
     let alumno = await buscarAlumnoRelacionado(prospecto.id_evaluacion, connection, true);
     let accionAlumno = "sin_cambios";
+    let idGrupoInscripcion = prospecto.id_grupo_propuesto ?? null;
 
     if (crearAlumno) {
       const statusAlumno = String(req.body?.status || "").trim();
@@ -314,6 +315,7 @@ router.post("/:id_appsheet/inscribir", async (req, res) => {
       }
 
       const idGrupo = normalizarTexto(req.body?.id_grupo);
+      idGrupoInscripcion = idGrupo;
       const cuotaRaw = req.body?.cuota_mensual;
       const cuotaMensual = cuotaRaw === null || cuotaRaw === undefined || cuotaRaw === ""
         ? null
@@ -436,10 +438,11 @@ router.post("/:id_appsheet/inscribir", async (req, res) => {
       UPDATE Examenes_Evaluacion
       SET status_contacto = ?,
           fecha_inscripcion = ?,
-          id_usuario_inscribe = ?
+          id_usuario_inscribe = ?,
+          id_grupo_propuesto = ?
       WHERE id_evaluacion = ?
       `,
-      [STATUS_CONTACTO_INSCRITO, fechaInscripcion, idUsuarioInscribe, prospecto.id_evaluacion]
+      [STATUS_CONTACTO_INSCRITO, fechaInscripcion, idUsuarioInscribe, idGrupoInscripcion, prospecto.id_evaluacion]
     );
 
     await connection.commit();
