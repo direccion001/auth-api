@@ -39,10 +39,12 @@ function compararSeguimientos(a, b, req) {
 
   if (fechaA !== fechaB) return fechaA.localeCompare(fechaB);
 
+  // En empate de fecha, la fila visible prioriza un seguimiento cuyo responsable sea el usuario actual.
   const mioA = mismoUsuario(a.IdUsuarioResponsable, req) ? 1 : 0;
   const mioB = mismoUsuario(b.IdUsuarioResponsable, req) ? 1 : 0;
   if (mioA !== mioB) return mioB - mioA;
 
+  // Si ninguno gana por responsabilidad, prevalece la actividad más reciente.
   const ultimoA = String(a.FechaUltimoRegistro || a.FechaApertura || "");
   const ultimoB = String(b.FechaUltimoRegistro || b.FechaApertura || "");
   return ultimoB.localeCompare(ultimoA);
@@ -66,20 +68,28 @@ function seguimientoPersonalizado(row, activos, req) {
     .filter((item) => item.FechaProximoSeguimiento)
     .sort((a, b) => compararSeguimientos(a, b, req));
 
+  // "Mi seguimiento" se define por responsable del ticket.
   const mios = activos.filter((item) => mismoUsuario(item.IdUsuarioResponsable, req));
-  const proximosMios = mios
-    .filter((item) => item.FechaProximoSeguimiento)
+
+  // "Mis próximos seguimientos" se define por quién agendó el próximo paso.
+  // La vista expone ese actor como IdUsuarioUltimoRegistro porque la próxima fecha
+  // pertenece al último detalle vigente del seguimiento.
+  const proximosAgendadosPorMi = activos
+    .filter((item) =>
+      item.FechaProximoSeguimiento &&
+      mismoUsuario(item.IdUsuarioUltimoRegistro, req)
+    )
     .sort((a, b) => compararSeguimientos(a, b, req));
 
   const relevante = candidatos[0] || null;
-  const mio = proximosMios[0] || null;
+  const mio = proximosAgendadosPorMi[0] || null;
 
   return {
     ...row,
     EstadoSeguimiento: estadoSeguimiento(row, activos, req),
     TieneMiSeguimientoActivo: mios.length > 0,
     CantidadMisSeguimientosActivos: mios.length,
-    CantidadMisProximosSeguimientos: proximosMios.length,
+    CantidadMisProximosSeguimientos: proximosAgendadosPorMi.length,
 
     IdSeguimientoRelevante: relevante?.id_seguimiento ?? null,
     IdDetalleProximoSeguimientoRelevante: relevante?.IdUltimoDetalle ?? null,
@@ -121,7 +131,7 @@ function filtrarPorSeguimiento(rows, value) {
   return rows.filter((row) => row.EstadoSeguimiento === esperado);
 }
 
-async function consultarSeguimientosActivos(req, filtros = {}) {
+async function consultarSeguimientosActivos(filtros = {}) {
   const params = [];
   let sql = `
     SELECT *
@@ -187,7 +197,7 @@ router.get("/", async (req, res) => {
     sql += " ORDER BY a.NombreCompleto ASC, a.IdAlumno ASC";
 
     const [alumnos] = await pool.query(sql, params);
-    const seguimientos = await consultarSeguimientosActivos(req, {
+    const seguimientos = await consultarSeguimientosActivos({
       idPlantel,
       idGrupo,
       idMaestro
