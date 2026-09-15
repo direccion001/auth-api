@@ -6,6 +6,7 @@ const authRouter = require("./routes/auth");
 const viewerRouter = require("./routes/viewer");
 const viewerProspectosPrivacyRouter = require("./routes/viewer-prospectos-privacy");
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
+const alumnosAsistenciasViewerRouter = require("./routes/viewer-alumnos-asistencias");
 const alumnosViewerRouter = require("./routes/viewer-alumnos");
 const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const graduacionesViewerRouter = require("./routes/viewer-graduaciones");
@@ -29,6 +30,9 @@ app.get("/", (req, res) => {
 // Rutas
 app.use("/auth", authRouter);
 app.use("/viewer/seguimientos", seguimientosViewerRouter);
+// Debe montarse antes del router general de alumnos para que esta ruta especializada
+// use paginación y no quede capturada por la implementación legacy del mismo path.
+app.use("/viewer/alumnos", alumnosAsistenciasViewerRouter);
 app.use("/viewer/alumnos", alumnosViewerRouter);
 app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer/graduaciones", graduacionesViewerRouter);
