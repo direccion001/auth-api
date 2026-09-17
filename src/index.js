@@ -9,7 +9,6 @@ const prospectosContactosViewerRouter = require("./routes/viewer-prospectos-cont
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
 const alumnosAsistenciasViewerRouter = require("./routes/viewer-alumnos-asistencias");
 const alumnosCalificacionesViewerRouter = require("./routes/viewer-alumnos-calificaciones");
-const alumnoInfoViewerRouter = require("./routes/viewer-alumno-info");
 const alumnosViewerRouter = require("./routes/viewer-alumnos");
 const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const graduacionesViewerRouter = require("./routes/viewer-graduaciones");
@@ -39,7 +38,6 @@ app.use("/viewer/prospectos", prospectosContactosViewerRouter);
 // Rutas especializadas de alumnos deben montarse antes del router interno general.
 app.use("/viewer/alumnos", alumnosAsistenciasViewerRouter);
 app.use("/viewer/alumnos", alumnosCalificacionesViewerRouter);
-app.use("/viewer/alumnos", alumnoInfoViewerRouter);
 app.use("/viewer/alumnos", alumnosViewerRouter);
 app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer/graduaciones", graduacionesViewerRouter);
