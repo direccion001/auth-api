@@ -58,6 +58,10 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
     }
     params.push(limit + 1, offset);
 
+    const capPagina = req.auth.tipo_usuario === "INTERNO"
+      ? "v.Cap, v.Pagina"
+      : "NULL AS Cap, NULL AS Pagina";
+
     // Pedimos una fila extra para saber si hay siguiente página sin ejecutar COUNT(*).
     const [rows] = await pool.query(
       `
@@ -87,8 +91,7 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
         v.IdCurso,
         v.Curso,
         v.ColorCurso,
-        v.Cap,
-        v.Pagina
+        ${capPagina}
       FROM vw_company_viewer_asistencias v
       WHERE v.IdAlumno = ?
         ${scope}
