@@ -39,12 +39,10 @@ function compararSeguimientos(a, b, req) {
 
   if (fechaA !== fechaB) return fechaA.localeCompare(fechaB);
 
-  // En empate de fecha, la fila visible prioriza un seguimiento cuyo responsable sea el usuario actual.
   const mioA = mismoUsuario(a.IdUsuarioResponsable, req) ? 1 : 0;
   const mioB = mismoUsuario(b.IdUsuarioResponsable, req) ? 1 : 0;
   if (mioA !== mioB) return mioB - mioA;
 
-  // Si ninguno gana por responsabilidad, prevalece la actividad más reciente.
   const ultimoA = String(a.FechaUltimoRegistro || a.FechaApertura || "");
   const ultimoB = String(b.FechaUltimoRegistro || b.FechaApertura || "");
   return ultimoB.localeCompare(ultimoA);
@@ -64,18 +62,17 @@ function estadoSeguimiento(row, activos, req) {
 }
 
 function seguimientoPersonalizado(row, activos, req) {
-  const candidatos = activos
-    .filter((item) => item.FechaProximoSeguimiento)
-    .sort((a, b) => compararSeguimientos(a, b, req));
+  const ordenados = [...activos].sort((a, b) => compararSeguimientos(a, b, req));
 
-  // "Mi seguimiento" siempre se define por el responsable de la cabecera/ticket.
-  // El usuario que registró el último detalle es solo autor histórico del contacto.
-  const mios = activos
-    .filter((item) => mismoUsuario(item.IdUsuarioResponsable, req))
-    .sort((a, b) => compararSeguimientos(a, b, req));
-
+  // La cabecera visible siempre proviene de un seguimiento activo, aunque todavía
+  // no tenga próxima fecha. El responsable pertenece al seguimiento, no al detalle.
+  const mios = ordenados.filter((item) => mismoUsuario(item.IdUsuarioResponsable, req));
   const miosConProximo = mios.filter((item) => item.FechaProximoSeguimiento);
-  const relevante = candidatos[0] || null;
+  const conProximo = ordenados.filter((item) => item.FechaProximoSeguimiento);
+
+  // Si existe un seguimiento propio, ese es el visible. Si no, se prioriza el
+  // próximo seguimiento con fecha; como último fallback, cualquier activo.
+  const visible = miosConProximo[0] || mios[0] || conProximo[0] || ordenados[0] || null;
   const mio = miosConProximo[0] || mios[0] || null;
 
   return {
@@ -85,14 +82,14 @@ function seguimientoPersonalizado(row, activos, req) {
     CantidadMisSeguimientosActivos: mios.length,
     CantidadMisProximosSeguimientos: miosConProximo.length,
 
-    IdSeguimientoRelevante: relevante?.id_seguimiento ?? null,
-    IdDetalleProximoSeguimientoRelevante: relevante?.IdUltimoDetalle ?? null,
-    FechaProximoSeguimientoRelevante: relevante?.FechaProximoSeguimiento ?? null,
-    ProximaAccionRelevante: relevante?.ProximaAccion ?? null,
-    IdUsuarioResponsableRelevante: relevante?.IdUsuarioResponsable ?? null,
-    ResponsableSeguimientoRelevante: relevante?.UsuarioResponsable ?? null,
-    SeguimientoRelevanteEsMio: relevante
-      ? mismoUsuario(relevante.IdUsuarioResponsable, req)
+    IdSeguimientoRelevante: visible?.id_seguimiento ?? null,
+    IdDetalleProximoSeguimientoRelevante: visible?.IdUltimoDetalle ?? null,
+    FechaProximoSeguimientoRelevante: visible?.FechaProximoSeguimiento ?? null,
+    ProximaAccionRelevante: visible?.ProximaAccion ?? null,
+    IdUsuarioResponsableRelevante: visible?.IdUsuarioResponsable ?? null,
+    ResponsableSeguimientoRelevante: visible?.UsuarioResponsable ?? null,
+    SeguimientoRelevanteEsMio: visible
+      ? mismoUsuario(visible.IdUsuarioResponsable, req)
       : false,
 
     MiIdSeguimiento: mio?.id_seguimiento ?? null,
