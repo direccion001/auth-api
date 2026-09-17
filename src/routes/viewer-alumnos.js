@@ -68,28 +68,22 @@ function seguimientoPersonalizado(row, activos, req) {
     .filter((item) => item.FechaProximoSeguimiento)
     .sort((a, b) => compararSeguimientos(a, b, req));
 
-  // "Mi seguimiento" se define por responsable del ticket.
-  const mios = activos.filter((item) => mismoUsuario(item.IdUsuarioResponsable, req));
-
-  // "Mis próximos seguimientos" se define por quién agendó el próximo paso.
-  // La vista expone ese actor como IdUsuarioUltimoRegistro porque la próxima fecha
-  // pertenece al último detalle vigente del seguimiento.
-  const proximosAgendadosPorMi = activos
-    .filter((item) =>
-      item.FechaProximoSeguimiento &&
-      mismoUsuario(item.IdUsuarioUltimoRegistro, req)
-    )
+  // "Mi seguimiento" siempre se define por el responsable de la cabecera/ticket.
+  // El usuario que registró el último detalle es solo autor histórico del contacto.
+  const mios = activos
+    .filter((item) => mismoUsuario(item.IdUsuarioResponsable, req))
     .sort((a, b) => compararSeguimientos(a, b, req));
 
+  const miosConProximo = mios.filter((item) => item.FechaProximoSeguimiento);
   const relevante = candidatos[0] || null;
-  const mio = proximosAgendadosPorMi[0] || null;
+  const mio = miosConProximo[0] || mios[0] || null;
 
   return {
     ...row,
     EstadoSeguimiento: estadoSeguimiento(row, activos, req),
     TieneMiSeguimientoActivo: mios.length > 0,
     CantidadMisSeguimientosActivos: mios.length,
-    CantidadMisProximosSeguimientos: proximosAgendadosPorMi.length,
+    CantidadMisProximosSeguimientos: miosConProximo.length,
 
     IdSeguimientoRelevante: relevante?.id_seguimiento ?? null,
     IdDetalleProximoSeguimientoRelevante: relevante?.IdUltimoDetalle ?? null,
@@ -104,7 +98,9 @@ function seguimientoPersonalizado(row, activos, req) {
     MiIdSeguimiento: mio?.id_seguimiento ?? null,
     MiIdDetalleProximoSeguimiento: mio?.IdUltimoDetalle ?? null,
     MiFechaProximoSeguimiento: mio?.FechaProximoSeguimiento ?? null,
-    MiProximaAccion: mio?.ProximaAccion ?? null
+    MiProximaAccion: mio?.ProximaAccion ?? null,
+    MiIdUsuarioResponsable: mio?.IdUsuarioResponsable ?? null,
+    MiResponsableSeguimiento: mio?.UsuarioResponsable ?? null
   };
 }
 
