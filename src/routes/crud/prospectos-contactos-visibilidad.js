@@ -36,16 +36,23 @@ router.patch("/:id_appsheet/contactos/:id_contacto/visibilidad", async (req, res
   }
 
   try {
-    const [result] = await pool.query(
+    const [rows] = await pool.query(
+      `SELECT id_contacto
+       FROM contactos_examenes_evaluacion
+       WHERE id_contacto = ? AND id_appsheet = ?
+       LIMIT 1`,
+      [idContacto, idAppsheet]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, code: "CONTACTO_NO_ENCONTRADO", message: "No encontramos ese contacto." });
+    }
+
+    await pool.query(
       `UPDATE contactos_examenes_evaluacion
        SET VisiblePlantel = ?
        WHERE id_contacto = ? AND id_appsheet = ?`,
       [visible, idContacto, idAppsheet]
     );
-
-    if (!result.affectedRows) {
-      return res.status(404).json({ ok: false, code: "CONTACTO_NO_ENCONTRADO", message: "No encontramos ese contacto." });
-    }
 
     return res.json({
       ok: true,
