@@ -39,16 +39,20 @@ router.patch("/:id_seguimiento/visibilidad", async (req, res) => {
   }
 
   try {
-    const [result] = await pool.query(
+    const [rows] = await pool.query(
+      "SELECT id_seguimiento FROM alumnos_seguimientos WHERE id_seguimiento = ? LIMIT 1",
+      [idSeguimiento]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, code: "SEGUIMIENTO_NO_ENCONTRADO", message: "No encontramos ese seguimiento." });
+    }
+
+    await pool.query(
       `UPDATE alumnos_seguimientos
        SET VisiblePlantel = ?
        WHERE id_seguimiento = ?`,
       [visible, idSeguimiento]
     );
-
-    if (!result.affectedRows) {
-      return res.status(404).json({ ok: false, code: "SEGUIMIENTO_NO_ENCONTRADO", message: "No encontramos ese seguimiento." });
-    }
 
     return res.json({
       ok: true,
