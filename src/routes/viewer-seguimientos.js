@@ -54,7 +54,7 @@ function alcancePlantel(req, alias, params) {
 
 function visibilidadSeguimiento(req, aliasCabecera = "sh") {
   return req.auth.tipo_usuario === "PLANTEL"
-    ? ` AND COALESCE(${aliasCabecera}.VisiblePlantel, 0) = 1`
+    ? ` AND COALESCE(${aliasCabecera}.VisiblePlantel, 1) = 1`
     : "";
 }
 
@@ -210,7 +210,7 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
     `;
 
     if (req.auth.tipo_usuario === "PLANTEL") {
-      detalleSql += " AND COALESCE(VisibleCliente, 0) = 1";
+      detalleSql += " AND COALESCE(VisibleCliente, 1) = 1";
     }
 
     detalleSql += " ORDER BY FechaRegistro DESC, id_detalle DESC";
