@@ -2,18 +2,21 @@ const express = require("express");
 
 const pool = require("../db/pool");
 const requireAuth = require("../middleware/requireAuth");
-const requireInterno = require("../middleware/requireInterno");
 
 const router = express.Router();
 
-router.use(requireAuth, requireInterno);
+router.use(requireAuth);
 
-function permitirAlumnos(req, res) {
-  if (!req.auth.modulos.includes("alumnos")) {
+function permitirAsistencias(req, res) {
+  const permitido =
+    req.auth.modulos.includes("alumnos") ||
+    req.auth.modulos.includes("asistencias");
+
+  if (!permitido) {
     res.status(403).json({
       ok: false,
       code: "MODULO_NO_AUTORIZADO",
-      message: "No tienes acceso al módulo de alumnos."
+      message: "No tienes acceso al historial de asistencias."
     });
     return false;
   }
@@ -32,7 +35,7 @@ function enteroPaginacion(value, fallback, min, max) {
 }
 
 router.get("/:id_alumno/asistencias", async (req, res) => {
-  if (!permitirAlumnos(req, res)) return;
+  if (!permitirAsistencias(req, res)) return;
 
   const idAlumno = texto(req.params.id_alumno);
   if (!idAlumno) {
@@ -47,6 +50,14 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
   const offset = enteroPaginacion(req.query.offset, 0, 0, 1000000);
 
   try {
+    const params = [idAlumno];
+    let scope = "";
+    if (!req.auth.acceso_global) {
+      scope = " AND v.IdPlantel = ?";
+      params.push(req.auth.id_plantel);
+    }
+    params.push(limit + 1, offset);
+
     // Pedimos una fila extra para saber si hay siguiente página sin ejecutar COUNT(*).
     const [rows] = await pool.query(
       `
@@ -80,10 +91,11 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
         v.Pagina
       FROM vw_company_viewer_asistencias v
       WHERE v.IdAlumno = ?
+        ${scope}
       ORDER BY v.Fecha DESC, v.IdDetalle DESC
       LIMIT ? OFFSET ?
       `,
-      [idAlumno, limit + 1, offset]
+      params
     );
 
     const hasMore = rows.length > limit;
@@ -102,6 +114,7 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
   } catch (error) {
     console.error("[VIEWER ALUMNOS] Error consultando asistencias paginadas", {
       id_alumno: idAlumno,
+      id_usuario: req.auth?.id_usuario,
       limit,
       offset,
       message: error?.message,
