@@ -47,6 +47,8 @@ router.get("/:id_alumno/calificaciones", async (req, res) => {
       params.push(req.auth.id_plantel);
     }
 
+    // El drawer recorre en orden ascendente y conserva la última fila de cada
+    // curso+módulo; por tanto muestra el intento más reciente.
     const [rows] = await pool.query(
       `
       SELECT c.*
