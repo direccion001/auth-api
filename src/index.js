@@ -5,12 +5,17 @@ require("dotenv").config();
 const authRouter = require("./routes/auth");
 const viewerRouter = require("./routes/viewer");
 const viewerProspectosPrivacyRouter = require("./routes/viewer-prospectos-privacy");
+const prospectosContactosViewerRouter = require("./routes/viewer-prospectos-contactos");
 const seguimientosViewerRouter = require("./routes/viewer-seguimientos");
 const alumnosAsistenciasViewerRouter = require("./routes/viewer-alumnos-asistencias");
+const alumnosCalificacionesViewerRouter = require("./routes/viewer-alumnos-calificaciones");
+const alumnoInfoViewerRouter = require("./routes/viewer-alumno-info");
 const alumnosViewerRouter = require("./routes/viewer-alumnos");
 const usuariosInternosViewerRouter = require("./routes/viewer-usuarios-internos");
 const graduacionesViewerRouter = require("./routes/viewer-graduaciones");
 const alumnosCrudRouter = require("./routes/crud/alumnos");
+const seguimientosVisibilidadRouter = require("./routes/crud/seguimientos-visibilidad");
+const prospectosContactosVisibilidadRouter = require("./routes/crud/prospectos-contactos-visibilidad");
 const detallesSeguimientosProximoRouter = require("./routes/crud/detalles-seguimientos-proximo");
 const crudRouter = require("./routes/crud");
 
@@ -30,15 +35,19 @@ app.get("/", (req, res) => {
 // Rutas
 app.use("/auth", authRouter);
 app.use("/viewer/seguimientos", seguimientosViewerRouter);
-// Debe montarse antes del router general de alumnos para que esta ruta especializada
-// use paginación y no quede capturada por la implementación legacy del mismo path.
+app.use("/viewer/prospectos", prospectosContactosViewerRouter);
+// Rutas especializadas de alumnos deben montarse antes del router interno general.
 app.use("/viewer/alumnos", alumnosAsistenciasViewerRouter);
+app.use("/viewer/alumnos", alumnosCalificacionesViewerRouter);
+app.use("/viewer/alumnos", alumnoInfoViewerRouter);
 app.use("/viewer/alumnos", alumnosViewerRouter);
 app.use("/viewer/usuarios-internos", usuariosInternosViewerRouter);
 app.use("/viewer/graduaciones", graduacionesViewerRouter);
 app.use("/viewer", viewerProspectosPrivacyRouter);
 app.use("/viewer", viewerRouter);
 app.use("/crud/alumnos", alumnosCrudRouter);
+app.use("/crud/seguimientos", seguimientosVisibilidadRouter);
+app.use("/crud/prospectos", prospectosContactosVisibilidadRouter);
 app.use("/crud/detalles-seguimientos", detallesSeguimientosProximoRouter);
 app.use("/crud", crudRouter);
 
