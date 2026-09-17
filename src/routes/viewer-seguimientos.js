@@ -7,12 +7,29 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+function tieneModuloSeguimientos(req) {
+  return req.auth.modulos.includes("seguimientos");
+}
+
 function permitirSeguimientos(req, res) {
-  if (!req.auth.modulos.includes("seguimientos")) {
+  if (!tieneModuloSeguimientos(req)) {
     res.status(403).json({
       ok: false,
       code: "MODULO_NO_AUTORIZADO",
       message: "No tienes acceso al módulo de seguimientos."
+    });
+    return false;
+  }
+  return true;
+}
+
+function permitirFichaAlumno(req, res) {
+  const permitidos = ["alumnos", "asistencias", "calificaciones", "seguimientos"];
+  if (!permitidos.some((modulo) => req.auth.modulos.includes(modulo))) {
+    res.status(403).json({
+      ok: false,
+      code: "MODULO_NO_AUTORIZADO",
+      message: "No tienes acceso a la ficha de alumnos."
     });
     return false;
   }
@@ -77,10 +94,11 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Devuelve ficha actual del alumno + cabeceras de sus tickets.
-// La ficha existe aunque el alumno todavía no tenga seguimientos.
+// Devuelve la misma ficha base que consume el drawer unificado.
+// No exige el módulo seguimientos: si el usuario puede consultar al alumno
+// pero no tiene seguimientos, simplemente devuelve seguimientos: [].
 router.get("/alumno/:id_alumno", async (req, res) => {
-  if (!permitirSeguimientos(req, res)) return;
+  if (!permitirFichaAlumno(req, res)) return;
 
   const idAlumno = String(req.params.id_alumno || "").trim();
   if (!idAlumno) {
@@ -110,25 +128,29 @@ router.get("/alumno/:id_alumno", async (req, res) => {
       });
     }
 
-    const seguimientoParams = [idAlumno];
-    let seguimientoSql = `
-      SELECT s.*, sh.VisiblePlantel
-      FROM vw_company_viewer_alumnos_seguimiento s
-      INNER JOIN alumnos_seguimientos sh
-        ON sh.id_seguimiento = s.id_seguimiento
-      WHERE s.IdAlumno = ?
-    `;
-    seguimientoSql += alcancePlantel(req, "s", seguimientoParams);
-    seguimientoSql += visibilidadSeguimiento(req, "sh");
-    seguimientoSql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
+    let seguimientos = [];
+    if (tieneModuloSeguimientos(req)) {
+      const seguimientoParams = [idAlumno];
+      let seguimientoSql = `
+        SELECT s.*, sh.VisiblePlantel
+        FROM vw_company_viewer_alumnos_seguimiento s
+        INNER JOIN alumnos_seguimientos sh
+          ON sh.id_seguimiento = s.id_seguimiento
+        WHERE s.IdAlumno = ?
+      `;
+      seguimientoSql += alcancePlantel(req, "s", seguimientoParams);
+      seguimientoSql += visibilidadSeguimiento(req, "sh");
+      seguimientoSql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
 
-    const [seguimientos] = await pool.query(seguimientoSql, seguimientoParams);
+      const [rows] = await pool.query(seguimientoSql, seguimientoParams);
+      seguimientos = rows.map((row) => agregarSeguimientoPropio(row, req));
+    }
 
     return res.json({
       ok: true,
       data: {
         alumno: alumnos[0],
-        seguimientos: seguimientos.map((row) => agregarSeguimientoPropio(row, req))
+        seguimientos
       }
     });
   } catch (error) {
@@ -141,7 +163,7 @@ router.get("/alumno/:id_alumno", async (req, res) => {
     return res.status(500).json({
       ok: false,
       code: "ERROR_CONSULTANDO_SEGUIMIENTOS_ALUMNO",
-      message: "No pudimos consultar los seguimientos de este alumno."
+      message: "No pudimos consultar la ficha de este alumno."
     });
   }
 });
