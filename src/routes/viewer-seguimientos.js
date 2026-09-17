@@ -35,18 +35,27 @@ function alcancePlantel(req, alias, params) {
   return ` AND ${alias}.IdPlantel = ?`;
 }
 
+function visibilidadSeguimiento(req, aliasCabecera = "sh") {
+  return req.auth.tipo_usuario === "PLANTEL"
+    ? ` AND COALESCE(${aliasCabecera}.VisiblePlantel, 0) = 1`
+    : "";
+}
+
 router.get("/", async (req, res) => {
   if (!permitirSeguimientos(req, res)) return;
 
   try {
     const params = [];
     let sql = `
-      SELECT *
+      SELECT s.*, sh.VisiblePlantel
       FROM vw_company_viewer_alumnos_seguimiento s
+      INNER JOIN alumnos_seguimientos sh
+        ON sh.id_seguimiento = s.id_seguimiento
       WHERE 1 = 1
     `;
 
     sql += alcancePlantel(req, "s", params);
+    sql += visibilidadSeguimiento(req, "sh");
     sql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
 
     const [rows] = await pool.query(sql, params);
@@ -103,11 +112,14 @@ router.get("/alumno/:id_alumno", async (req, res) => {
 
     const seguimientoParams = [idAlumno];
     let seguimientoSql = `
-      SELECT *
+      SELECT s.*, sh.VisiblePlantel
       FROM vw_company_viewer_alumnos_seguimiento s
+      INNER JOIN alumnos_seguimientos sh
+        ON sh.id_seguimiento = s.id_seguimiento
       WHERE s.IdAlumno = ?
     `;
     seguimientoSql += alcancePlantel(req, "s", seguimientoParams);
+    seguimientoSql += visibilidadSeguimiento(req, "sh");
     seguimientoSql += " ORDER BY s.FechaApertura DESC, s.id_seguimiento DESC";
 
     const [seguimientos] = await pool.query(seguimientoSql, seguimientoParams);
@@ -151,9 +163,12 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
     let accesoSql = `
       SELECT s.id_seguimiento
       FROM vw_company_viewer_alumnos_seguimiento s
+      INNER JOIN alumnos_seguimientos sh
+        ON sh.id_seguimiento = s.id_seguimiento
       WHERE s.id_seguimiento = ?
     `;
     accesoSql += alcancePlantel(req, "s", accesoParams);
+    accesoSql += visibilidadSeguimiento(req, "sh");
     accesoSql += " LIMIT 1";
 
     const [seguimientos] = await pool.query(accesoSql, accesoParams);
@@ -173,7 +188,7 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
     `;
 
     if (req.auth.tipo_usuario === "PLANTEL") {
-      detalleSql += " AND VisibleCliente = 1";
+      detalleSql += " AND COALESCE(VisibleCliente, 0) = 1";
     }
 
     detalleSql += " ORDER BY FechaRegistro DESC, id_detalle DESC";
