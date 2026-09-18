@@ -61,7 +61,9 @@ router.use("/prospectos", requireAuth, (req, res, next) => {
   const esContactoPlantel = ["POST", "PATCH"].includes(req.method)
     && /^\/[^/]+\/contactos(?:\/[^/]+)?$/.test(path);
 
-  if (!req.auth?.acceso_global && (esAltaProspecto || esContactoPlantel)) return next();
+  const esUsuarioPlantel = String(req.auth?.tipo_usuario || "").trim().toUpperCase() === "PLANTEL";
+
+  if (esUsuarioPlantel && (esAltaProspecto || esContactoPlantel)) return next();
 
   return res.status(403).json({
     ok: false,
