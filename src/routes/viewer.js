@@ -241,11 +241,7 @@ router.get("/asistencias", async (req, res) => {
         StatusAlumno,
         FechaRegistroAlumno,
         FechaBajaAlumno,
-        (
-          SELECT MIN(h.Fecha)
-          FROM vw_company_viewer_asistencias h
-          WHERE h.IdAlumno = v.IdAlumno
-        ) AS PrimeraAsistenciaAlumno,
+        hist.PrimeraAsistenciaAlumno,
         AsistenciaAlumno,
         EnSeguimiento,
         Presente,
@@ -275,6 +271,11 @@ router.get("/asistencias", async (req, res) => {
         LogoUrl
         ${columnasFinancieras}
       FROM vw_company_viewer_asistencias v
+      LEFT JOIN (
+        SELECT IdAlumno, MIN(Fecha) AS PrimeraAsistenciaAlumno
+        FROM vw_company_viewer_asistencias
+        GROUP BY IdAlumno
+      ) hist ON hist.IdAlumno = v.IdAlumno
       WHERE 1 = 1
     `;
 
@@ -337,13 +338,14 @@ router.get("/calificaciones", async (req, res) => {
     let sql = `
       SELECT
         c.*,
-        (
-          SELECT MIN(h.FechaCalificacion)
-          FROM vw_company_viewer_calificaciones h
-          WHERE h.IdAlumno = c.IdAlumno
-            AND h.Calificacion IS NOT NULL
-        ) AS PrimeraCalificacionAlumno
+        hist.PrimeraCalificacionAlumno
       FROM vw_company_viewer_calificaciones c
+      LEFT JOIN (
+        SELECT IdAlumno, MIN(FechaCalificacion) AS PrimeraCalificacionAlumno
+        FROM vw_company_viewer_calificaciones
+        WHERE Calificacion IS NOT NULL
+        GROUP BY IdAlumno
+      ) hist ON hist.IdAlumno = c.IdAlumno
       WHERE 1 = 1
     `;
 
