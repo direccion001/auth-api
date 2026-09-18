@@ -5,7 +5,7 @@ const requireAuth = require("../../middleware/requireAuth");
 const requireInterno = require("../../middleware/requireInterno");
 
 const router = express.Router();
-router.use(requireAuth, requireInterno);
+router.use(requireAuth);
 
 function permitir(req, res) {
   if (!req.auth.modulos.includes("prospectos")) {
@@ -21,7 +21,7 @@ function booleano(value) {
   return null;
 }
 
-router.patch("/:id_appsheet/contactos/:id_contacto/visibilidad", async (req, res) => {
+router.patch("/:id_appsheet/contactos/:id_contacto/visibilidad", requireInterno, async (req, res) => {
   if (!permitir(req, res)) return;
 
   const idAppsheet = String(req.params.id_appsheet || "").trim();
