@@ -86,6 +86,7 @@ async function requireAuth(req, res, next) {
       req.auth = {
         tipo_usuario: "INTERNO",
         id_usuario: usuario.id_usuario,
+        correo: usuario.correo,
         rol: usuario.rol,
         alcance: politica.alcance,
         acceso_global: politica.acceso_global,
