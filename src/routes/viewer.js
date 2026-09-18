@@ -272,12 +272,12 @@ router.get("/asistencias", async (req, res) => {
         ${columnasFinancieras}
       FROM vw_company_viewer_asistencias v
       LEFT JOIN (
-        SELECT IdAlumno, MIN(Fecha) AS PrimeraAsistenciaAlumno
+        SELECT IdAlumno AS IdAlumnoHistorial, MIN(Fecha) AS PrimeraAsistenciaAlumno
         FROM vw_company_viewer_asistencias
         WHERE Presente IS NOT NULL
           AND TRIM(CAST(Presente AS CHAR)) <> ''
         GROUP BY IdAlumno
-      ) hist ON hist.IdAlumno = v.IdAlumno
+      ) hist ON hist.IdAlumnoHistorial = v.IdAlumno
       WHERE 1 = 1
     `;
 
