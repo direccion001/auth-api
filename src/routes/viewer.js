@@ -241,6 +241,7 @@ router.get("/asistencias", async (req, res) => {
         StatusAlumno,
         FechaRegistroAlumno,
         FechaBajaAlumno,
+        hist.PrimeraAsistenciaAlumno,
         AsistenciaAlumno,
         EnSeguimiento,
         Presente,
@@ -270,6 +271,13 @@ router.get("/asistencias", async (req, res) => {
         LogoUrl
         ${columnasFinancieras}
       FROM vw_company_viewer_asistencias v
+      LEFT JOIN (
+        SELECT IdAlumno AS IdAlumnoHistorial, MIN(Fecha) AS PrimeraAsistenciaAlumno
+        FROM vw_company_viewer_asistencias
+        WHERE Presente IS NOT NULL
+          AND TRIM(CAST(Presente AS CHAR)) <> ''
+        GROUP BY IdAlumno
+      ) hist ON hist.IdAlumnoHistorial = v.IdAlumno
       WHERE 1 = 1
     `;
 
@@ -330,12 +338,21 @@ router.get("/calificaciones", async (req, res) => {
     const params = [];
 
     let sql = `
-      SELECT *
-      FROM vw_company_viewer_calificaciones
+      SELECT
+        c.*,
+        hist.PrimeraCalificacionAlumno
+      FROM vw_company_viewer_calificaciones c
+      LEFT JOIN (
+        SELECT IdAlumno, MIN(FechaCalificacion) AS PrimeraCalificacionAlumno
+        FROM vw_company_viewer_calificaciones
+        WHERE Calificacion IS NOT NULL
+          AND Calificacion <> 0
+        GROUP BY IdAlumno
+      ) hist ON hist.IdAlumno = c.IdAlumno
       WHERE 1 = 1
     `;
 
-    sql = filtroPlantel(req, sql, params);
+    sql = aplicarAlcance(req, sql, params, { columnaPlantel: "c.IdPlantel" });
 
     if (req.query.status) {
       sql += " AND StatusAlumno = ?";
