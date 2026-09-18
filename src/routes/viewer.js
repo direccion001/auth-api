@@ -253,6 +253,7 @@ router.get("/asistencias", async (req, res) => {
         Modalidad,
         TipoGrupo,
         ClasePrivada,
+        EsExtraHelp,
         DiasClase,
         HoraInicio,
         HoraFin,
