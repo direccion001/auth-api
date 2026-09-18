@@ -274,6 +274,8 @@ router.get("/asistencias", async (req, res) => {
       LEFT JOIN (
         SELECT IdAlumno, MIN(Fecha) AS PrimeraAsistenciaAlumno
         FROM vw_company_viewer_asistencias
+        WHERE Presente IS NOT NULL
+          AND TRIM(CAST(Presente AS CHAR)) <> ''
         GROUP BY IdAlumno
       ) hist ON hist.IdAlumno = v.IdAlumno
       WHERE 1 = 1
@@ -344,6 +346,7 @@ router.get("/calificaciones", async (req, res) => {
         SELECT IdAlumno, MIN(FechaCalificacion) AS PrimeraCalificacionAlumno
         FROM vw_company_viewer_calificaciones
         WHERE Calificacion IS NOT NULL
+          AND Calificacion <> 0
         GROUP BY IdAlumno
       ) hist ON hist.IdAlumno = c.IdAlumno
       WHERE 1 = 1
