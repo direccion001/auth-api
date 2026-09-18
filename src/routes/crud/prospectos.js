@@ -10,7 +10,7 @@ router.use(requireAuth);
 
 const STATUS_NO_APLICA = "0 No aplica";
 const STATUS_LISTO_EVALUAR = "3 Listo para evaluar";
-const STATUS_NIVEL_ASIGNADO = "4 Nivel Asignado";
+const STATUS_NIVEL_ASIGNADO = "4 Nivel asignado";
 const STATUS_CONTACTO_INSCRITO = "2 Inscrito";
 const STATUS_ALUMNO_PERMITIDOS = new Set(["Activo", "En formación"]);
 const STATUS_PERMITEN_NIVEL = new Set([
