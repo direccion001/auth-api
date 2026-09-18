@@ -170,22 +170,6 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
 
     if (!soloQuitaNivel) return next();
 
-    const statusActual = String(prospecto.status || "").trim();
-    const statusPermitidos = new Set([
-      "0 No aplica",
-      "2 Falta examen oral",
-      "3 Listo para evaluar",
-      "4 Nivel asignado"
-    ]);
-
-    if (!statusPermitidos.has(statusActual)) {
-      return res.status(409).json({
-        ok: false,
-        code: "NIVEL_NO_EDITABLE",
-        message: "El nivel no puede modificarse en el status académico actual."
-      });
-    }
-
     const statusDerivado = statusSinNivel(prospecto);
     await pool.query(
       `UPDATE Examenes_Evaluacion SET nivel_sugerido = NULL, status = ? WHERE id_appsheet = ?`,
