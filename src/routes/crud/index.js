@@ -175,7 +175,7 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
       "0 No aplica",
       "2 Falta examen oral",
       "3 Listo para evaluar",
-      "4 Nivel Asignado"
+      "4 Nivel asignado"
     ]);
 
     if (!statusPermitidos.has(statusActual)) {
