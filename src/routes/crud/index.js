@@ -4,7 +4,6 @@ const requireAuth = require("../../middleware/requireAuth");
 
 const prospectosResponsableRouter = require("./prospectos-responsable");
 const prospectosComentariosRouter = require("./prospectos-comentarios");
-const prospectosEvaluacionRouter = require("./prospectos-evaluacion");
 const prospectosCalificacionesRouter = require("./prospectos-calificaciones");
 const prospectosContactosFechaRouter = require("./prospectos-contactos-fecha");
 const prospectosInscripcionRouter = require("./prospectos-inscripcion");
@@ -170,22 +169,6 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
 
     if (!soloQuitaNivel) return next();
 
-    const statusActual = String(prospecto.status || "").trim();
-    const statusPermitidos = new Set([
-      "0 No aplica",
-      "2 Falta examen oral",
-      "3 Listo para evaluar",
-      "4 Nivel asignado"
-    ]);
-
-    if (!statusPermitidos.has(statusActual)) {
-      return res.status(409).json({
-        ok: false,
-        code: "NIVEL_NO_EDITABLE",
-        message: "El nivel no puede modificarse en el status académico actual."
-      });
-    }
-
     const statusDerivado = statusSinNivel(prospecto);
     await pool.query(
       `UPDATE Examenes_Evaluacion SET nivel_sugerido = NULL, status = ? WHERE id_appsheet = ?`,
@@ -214,7 +197,6 @@ router.patch("/prospectos/:id_appsheet", requireAuth, async (req, res, next) => 
 
 router.use("/prospectos", prospectosResponsableRouter);
 router.use("/prospectos", prospectosComentariosRouter);
-router.use("/prospectos", prospectosEvaluacionRouter);
 router.use("/prospectos", prospectosCalificacionesRouter);
 router.use("/prospectos", prospectosContactosFechaRouter);
 router.use("/prospectos", prospectosInscripcionRouter);
