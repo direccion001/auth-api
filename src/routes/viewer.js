@@ -241,6 +241,11 @@ router.get("/asistencias", async (req, res) => {
         StatusAlumno,
         FechaRegistroAlumno,
         FechaBajaAlumno,
+        (
+          SELECT MIN(h.Fecha)
+          FROM vw_company_viewer_asistencias h
+          WHERE h.IdAlumno = v.IdAlumno
+        ) AS PrimeraAsistenciaAlumno,
         AsistenciaAlumno,
         EnSeguimiento,
         Presente,
@@ -330,12 +335,19 @@ router.get("/calificaciones", async (req, res) => {
     const params = [];
 
     let sql = `
-      SELECT *
-      FROM vw_company_viewer_calificaciones
+      SELECT
+        c.*,
+        (
+          SELECT MIN(h.FechaCalificacion)
+          FROM vw_company_viewer_calificaciones h
+          WHERE h.IdAlumno = c.IdAlumno
+            AND h.Calificacion IS NOT NULL
+        ) AS PrimeraCalificacionAlumno
+      FROM vw_company_viewer_calificaciones c
       WHERE 1 = 1
     `;
 
-    sql = filtroPlantel(req, sql, params);
+    sql = aplicarAlcance(req, sql, params, { columnaPlantel: "c.IdPlantel" });
 
     if (req.query.status) {
       sql += " AND StatusAlumno = ?";
