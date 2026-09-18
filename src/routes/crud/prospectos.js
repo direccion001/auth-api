@@ -9,12 +9,16 @@ const router = express.Router();
 router.use(requireAuth);
 
 const STATUS_NO_APLICA = "0 No aplica";
+const STATUS_FALTA_EXAMEN_ESCRITO = "1 Falta examen escrito";
+const STATUS_FALTA_EXAMEN_ORAL = "2 Falta examen oral";
 const STATUS_LISTO_EVALUAR = "3 Listo para evaluar";
 const STATUS_NIVEL_ASIGNADO = "4 Nivel asignado";
 const STATUS_CONTACTO_INSCRITO = "2 Inscrito";
 const STATUS_ALUMNO_PERMITIDOS = new Set(["Activo", "En formación"]);
-const STATUS_PERMITEN_NIVEL = new Set([
+const STATUS_ACADEMICOS = new Set([
   STATUS_NO_APLICA,
+  STATUS_FALTA_EXAMEN_ESCRITO,
+  STATUS_FALTA_EXAMEN_ORAL,
   STATUS_LISTO_EVALUAR,
   STATUS_NIVEL_ASIGNADO
 ]);
@@ -44,6 +48,25 @@ function normalizarCorreo(correo) {
 
 function correoValido(correo) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+}
+
+function tieneResultadoEscrito(prospecto) {
+  return [
+    prospecto?.score_principiante,
+    prospecto?.score_intermedio,
+    prospecto?.score_avanzado,
+    prospecto?.promedio_total
+  ].some((valor) => {
+    if (valor === null || valor === undefined || valor === "") return false;
+    const numero = Number(valor);
+    return Number.isFinite(numero) && numero > 0;
+  });
+}
+
+function statusSinNivel(prospecto) {
+  if (normalizarTexto(prospecto?.audio_url)) return STATUS_LISTO_EVALUAR;
+  if (tieneResultadoEscrito(prospecto)) return STATUS_FALTA_EXAMEN_ORAL;
+  return STATUS_FALTA_EXAMEN_ESCRITO;
 }
 
 function tiene(obj, campo) {
@@ -293,35 +316,37 @@ router.patch("/:id_appsheet", async (req, res) => {
 
       const solicitaStatusAcademico = tiene(body, "status");
       const solicitaNivel = tiene(body, "nivel_sugerido");
+      const nivelSolicitado = solicitaNivel ? normalizarTexto(body.nivel_sugerido) : undefined;
+      const nivelEfectivo = solicitaNivel ? nivelSolicitado : normalizarTexto(actual.nivel_sugerido);
 
       if (solicitaStatusAcademico) {
         const statusSolicitado = normalizarTexto(body.status);
-        if (statusSolicitado !== STATUS_NO_APLICA) {
+        if (!STATUS_ACADEMICOS.has(statusSolicitado)) {
           return res.status(400).json({
             ok: false,
-            code: "STATUS_ACADEMICO_NO_PERMITIDO",
-            message: `Desde Company Viewer solo puede establecerse manualmente ${STATUS_NO_APLICA}.`
+            code: "STATUS_ACADEMICO_INVALIDO",
+            message: "Selecciona un status de evaluación válido."
+          });
+        }
+        if (statusSolicitado === STATUS_NIVEL_ASIGNADO && !nivelEfectivo) {
+          return res.status(409).json({
+            ok: false,
+            code: "NIVEL_REQUERIDO",
+            message: "No puede establecerse Nivel asignado sin un nivel."
           });
         }
         updates.push("status = ?");
-        params.push(STATUS_NO_APLICA);
+        params.push(statusSolicitado);
       }
 
       if (solicitaNivel) {
-        const statusBase = solicitaStatusAcademico ? STATUS_NO_APLICA : actual.status;
-        if (!STATUS_PERMITEN_NIVEL.has(statusBase)) {
-          return res.status(409).json({
-            ok: false,
-            code: "NIVEL_NO_EDITABLE",
-            message: "El nivel solo puede modificarse cuando el prospecto está listo para evaluar, no aplica o ya tiene nivel asignado."
-          });
-        }
-
-        const nivel = normalizarTexto(body.nivel_sugerido);
         updates.push("nivel_sugerido = ?");
-        params.push(nivel);
-        updates.push("status = ?");
-        params.push(nivel ? STATUS_NIVEL_ASIGNADO : STATUS_LISTO_EVALUAR);
+        params.push(nivelSolicitado);
+
+        if (!solicitaStatusAcademico) {
+          updates.push("status = ?");
+          params.push(nivelSolicitado ? STATUS_NIVEL_ASIGNADO : statusSinNivel(actual));
+        }
       }
     } else {
       const camposRestringidos = [
