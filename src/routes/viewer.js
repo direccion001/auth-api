@@ -253,7 +253,7 @@ router.get("/asistencias", async (req, res) => {
         Modalidad,
         TipoGrupo,
         ClasePrivada,
-        EsExtraHelp,
+        COALESCE(g_extra.EsExtraHelp, 0) AS EsExtraHelp,
         DiasClase,
         HoraInicio,
         HoraFin,
@@ -272,6 +272,8 @@ router.get("/asistencias", async (req, res) => {
         LogoUrl
         ${columnasFinancieras}
       FROM vw_company_viewer_asistencias v
+      LEFT JOIN GRUPOS g_extra
+        ON g_extra.IdGrupo = v.IdGrupo
       LEFT JOIN (
         SELECT IdAlumno AS IdAlumnoHistorial, MIN(Fecha) AS PrimeraAsistenciaAlumno
         FROM vw_company_viewer_asistencias
