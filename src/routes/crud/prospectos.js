@@ -38,7 +38,8 @@ function normalizarTexto(valor) {
 }
 
 function normalizarCorreo(correo) {
-  return String(correo || "").trim().toLowerCase();
+  const texto = String(correo ?? "").trim().toLowerCase();
+  return texto || null;
 }
 
 function correoValido(correo) {
@@ -245,7 +246,7 @@ router.patch("/:id_appsheet", async (req, res) => {
       if (!tiene(body, entrada)) continue;
       const valor = normalizarTexto(body[entrada]);
 
-      if (["nombre", "telefono"].includes(entrada) && !valor) {
+      if (entrada === "nombre" && !valor) {
         return res.status(400).json({ ok: false, code: "CAMPO_REQUERIDO", message: `${entrada} no puede quedar vacío.` });
       }
 
@@ -263,7 +264,7 @@ router.patch("/:id_appsheet", async (req, res) => {
 
     if (tiene(body, "correo")) {
       const correo = normalizarCorreo(body.correo);
-      if (!correo || !correoValido(correo)) {
+      if (correo && !correoValido(correo)) {
         return res.status(400).json({ ok: false, code: "CORREO_INVALIDO", message: "Ingresa un correo electrónico válido." });
       }
       updates.push("correo = ?");
