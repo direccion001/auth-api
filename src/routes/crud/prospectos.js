@@ -165,7 +165,14 @@ router.post("/", async (req, res) => {
     }
 
     let idPlantel;
-    if (req.auth.acceso_global) {
+    const esUsuarioPlantel = String(req.auth?.tipo_usuario || "").trim().toUpperCase() === "PLANTEL";
+
+    if (esUsuarioPlantel) {
+      idPlantel = String(req.auth.id_plantel || "").trim();
+      if (!idPlantel) {
+        return res.status(403).json({ ok: false, code: "PLANTEL_NO_ASIGNADO", message: "Tu usuario no tiene un plantel asignado." });
+      }
+    } else if (req.auth.acceso_global) {
       idPlantel = String(req.body?.id_plantel || "").trim();
       if (!idPlantel) {
         return res.status(400).json({ ok: false, code: "PLANTEL_REQUERIDO", message: "Selecciona el plantel del prospecto." });
