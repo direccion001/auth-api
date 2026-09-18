@@ -145,7 +145,7 @@ router.post("/", async (req, res) => {
   try {
     const nombre = String(req.body?.nombre || "").trim();
     const apellido = normalizarTexto(req.body?.apellido);
-    const telefono = String(req.body?.telefono || "").trim();
+    const telefono = normalizarTexto(req.body?.telefono);
     const correo = normalizarCorreo(req.body?.correo);
     const origenLead = normalizarTexto(req.body?.origen_lead);
     const horarioPreferido = normalizarTexto(req.body?.horario_preferido);
@@ -154,13 +154,7 @@ router.post("/", async (req, res) => {
     if (!nombre) {
       return res.status(400).json({ ok: false, code: "NOMBRE_REQUERIDO", message: "Ingresa el nombre del prospecto." });
     }
-    if (!telefono) {
-      return res.status(400).json({ ok: false, code: "TELEFONO_REQUERIDO", message: "Ingresa el teléfono del prospecto." });
-    }
-    if (!correo) {
-      return res.status(400).json({ ok: false, code: "CORREO_REQUERIDO", message: "Ingresa el correo electrónico del prospecto." });
-    }
-    if (!correoValido(correo)) {
+    if (correo && !correoValido(correo)) {
       return res.status(400).json({ ok: false, code: "CORREO_INVALIDO", message: "Ingresa un correo electrónico válido." });
     }
 
