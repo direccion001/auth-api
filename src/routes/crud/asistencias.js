@@ -19,6 +19,7 @@ function rolInterno(req) {
 
 function puedeRegistrar(req) {
   return req.auth?.tipo_usuario === "INTERNO"
+    && req.auth?.modulos?.includes("asistencias")
     && ["admin", "administrador", "directivo", "maestro"].includes(rolInterno(req));
 }
 
