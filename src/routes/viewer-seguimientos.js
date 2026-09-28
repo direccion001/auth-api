@@ -23,6 +23,38 @@ function permitirSeguimientos(req, res) {
   return true;
 }
 
+function puedeConsultarSeguimientos(req) {
+  return req.auth.tipo_usuario === "PLANTEL" || tieneModuloSeguimientos(req);
+}
+
+function permitirConsultaSeguimientos(req, res) {
+  if (!puedeConsultarSeguimientos(req)) {
+    res.status(403).json({
+      ok: false,
+      code: "MODULO_NO_AUTORIZADO",
+      message: "No tienes acceso para consultar seguimientos."
+    });
+    return false;
+  }
+  return true;
+}
+
+function selectUsuarioCreadorSeguimiento(aliasSeguimiento = "s") {
+  return `
+    (
+      SELECT NULLIF(TRIM(CONCAT_WS(' ', u.Nombre, u.Apellidos)), '')
+      FROM auditoria_eventos ae
+      LEFT JOIN USUARIOS u
+        ON u.\`ID Usuario\` = ae.actor_id
+      WHERE ae.entidad = 'alumnos_seguimientos'
+        AND ae.evento = 'SEGUIMIENTO_CREADO'
+        AND ae.id_registro = ${aliasSeguimiento}.id_seguimiento
+      ORDER BY ae.fecha ASC, ae.id_evento ASC
+      LIMIT 1
+    ) AS UsuarioCreador
+  `;
+}
+
 function permitirFichaAlumno(req, res) {
   const permitidos = ["alumnos", "asistencias", "calificaciones", "seguimientos"];
   if (!permitidos.some((modulo) => req.auth.modulos.includes(modulo))) {
@@ -64,7 +96,7 @@ router.get("/", async (req, res) => {
   try {
     const params = [];
     let sql = `
-      SELECT s.*, sh.VisiblePlantel
+      SELECT s.*, sh.VisiblePlantel, ${selectUsuarioCreadorSeguimiento("s")}
       FROM vw_company_viewer_alumnos_seguimiento s
       INNER JOIN alumnos_seguimientos sh
         ON sh.id_seguimiento = s.id_seguimiento
@@ -95,8 +127,8 @@ router.get("/", async (req, res) => {
 });
 
 // Devuelve la misma ficha base que consume el drawer unificado.
-// No exige el módulo seguimientos: si el usuario puede consultar al alumno
-// pero no tiene seguimientos, simplemente devuelve seguimientos: [].
+// PLANTEL puede consultar únicamente alumnos de su plantel y seguimientos
+// marcados como visibles; usuarios internos requieren el módulo seguimientos.
 router.get("/alumno/:id_alumno", async (req, res) => {
   if (!permitirFichaAlumno(req, res)) return;
 
@@ -129,10 +161,10 @@ router.get("/alumno/:id_alumno", async (req, res) => {
     }
 
     let seguimientos = [];
-    if (tieneModuloSeguimientos(req)) {
+    if (puedeConsultarSeguimientos(req)) {
       const seguimientoParams = [idAlumno];
       let seguimientoSql = `
-        SELECT s.*, sh.VisiblePlantel
+        SELECT s.*, sh.VisiblePlantel, ${selectUsuarioCreadorSeguimiento("s")}
         FROM vw_company_viewer_alumnos_seguimiento s
         INNER JOIN alumnos_seguimientos sh
           ON sh.id_seguimiento = s.id_seguimiento
@@ -169,7 +201,7 @@ router.get("/alumno/:id_alumno", async (req, res) => {
 });
 
 router.get("/:id_seguimiento/detalles", async (req, res) => {
-  if (!permitirSeguimientos(req, res)) return;
+  if (!permitirConsultaSeguimientos(req, res)) return;
 
   const idSeguimiento = String(req.params.id_seguimiento || "").trim();
   if (!idSeguimiento) {
