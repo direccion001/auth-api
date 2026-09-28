@@ -127,8 +127,8 @@ router.get("/", async (req, res) => {
 });
 
 // Devuelve la misma ficha base que consume el drawer unificado.
-// No exige el módulo seguimientos: si el usuario puede consultar al alumno
-// pero no tiene seguimientos, simplemente devuelve seguimientos: [].
+// PLANTEL puede consultar únicamente alumnos de su plantel y seguimientos
+// marcados como visibles; usuarios internos requieren el módulo seguimientos.
 router.get("/alumno/:id_alumno", async (req, res) => {
   if (!permitirFichaAlumno(req, res)) return;
 
