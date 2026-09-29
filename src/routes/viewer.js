@@ -63,6 +63,44 @@ function numero(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function aplicarSeguimientoVisiblePlantel(req, rows) {
+  if (req.auth.tipo_usuario !== "PLANTEL" || !Array.isArray(rows) || rows.length === 0) {
+    return rows;
+  }
+
+  const idsAlumno = [...new Set(
+    rows
+      .map((row) => String(row.IdAlumno ?? "").trim())
+      .filter(Boolean)
+  )];
+
+  if (!idsAlumno.length) return rows;
+
+  const placeholders = idsAlumno.map(() => "?").join(", ");
+  const [visibles] = await pool.query(
+    `
+    SELECT DISTINCT s.IdAlumno
+    FROM alumnos_seguimientos s
+    INNER JOIN ALUMNOS a
+      ON a.IdAlumno = s.IdAlumno
+    WHERE s.Status = 'Abierto'
+      AND COALESCE(s.VisiblePlantel, 1) = 1
+      AND a.IdPlantel = ?
+      AND s.IdAlumno IN (${placeholders})
+    `,
+    [req.auth.id_plantel, ...idsAlumno]
+  );
+
+  const conSeguimientoVisible = new Set(
+    visibles.map((row) => String(row.IdAlumno))
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    EnSeguimiento: conSeguimientoVisible.has(String(row.IdAlumno)) ? 1 : 0
+  }));
+}
+
 function nuevaSumaFinanciera(idPlantel = null, idGrupo = null) {
   return {
     ...(idPlantel ? { id_plantel: idPlantel } : {}),
@@ -303,17 +341,18 @@ router.get("/asistencias", async (req, res) => {
     }
 
     const [rows] = await pool.query(sql, params);
+    const rowsVisibles = await aplicarSeguimientoVisiblePlantel(req, rows);
 
     if (!incluirFinanzas) {
-      return res.json({ ok: true, data: rows });
+      return res.json({ ok: true, data: rowsVisibles });
     }
 
     const pagosRows = await consultarPagosMaestros(req);
-    const financial = construirResumenFinanciero(rows, pagosRows);
+    const financial = construirResumenFinanciero(rowsVisibles, pagosRows);
 
     return res.json({
       ok: true,
-      data: rows,
+      data: rowsVisibles,
       financial
     });
 
@@ -361,8 +400,9 @@ router.get("/calificaciones", async (req, res) => {
     }
 
     const [rows] = await pool.query(sql, params);
+    const rowsVisibles = await aplicarSeguimientoVisiblePlantel(req, rows);
 
-    res.json({ ok: true, data: rows });
+    res.json({ ok: true, data: rowsVisibles });
 
   } catch (error) {
     console.error("[VIEWER] calificaciones", error);
