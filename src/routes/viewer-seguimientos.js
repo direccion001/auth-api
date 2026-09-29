@@ -236,16 +236,20 @@ router.get("/:id_seguimiento/detalles", async (req, res) => {
 
     const detalleParams = [idSeguimiento];
     let detalleSql = `
-      SELECT *
-      FROM vw_company_viewer_alumnos_seguimiento_detalle
-      WHERE id_seguimiento = ?
+      SELECT
+        d.*,
+        NULLIF(TRIM(CONCAT_WS(' ', u.Nombre, u.Apellidos)), '') AS UsuarioRegistro
+      FROM vw_company_viewer_alumnos_seguimiento_detalle d
+      LEFT JOIN USUARIOS u
+        ON u.\`ID Usuario\` = d.IdUsuario
+      WHERE d.id_seguimiento = ?
     `;
 
     if (req.auth.tipo_usuario === "PLANTEL") {
-      detalleSql += " AND COALESCE(VisibleCliente, 1) = 1";
+      detalleSql += " AND COALESCE(d.VisibleCliente, 1) = 1";
     }
 
-    detalleSql += " ORDER BY FechaRegistro DESC, id_detalle DESC";
+    detalleSql += " ORDER BY d.FechaRegistro DESC, d.id_detalle DESC";
 
     const [rows] = await pool.query(detalleSql, detalleParams);
 
