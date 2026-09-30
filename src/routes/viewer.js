@@ -547,10 +547,35 @@ router.post("/prospectos/:id_evaluacion/pdf-opciones", async (req, res) => {
       });
     }
 
+    const pdfParams = new URLSearchParams({
+      token,
+      id_evaluacion: String(idEvaluacion)
+    });
+
+    const pdfResponse = await fetch(
+      `${EVALUACION_WEBHOOK_URL}/pdf-opciones?${pdfParams.toString()}`,
+      { redirect: "manual" }
+    );
+
+    const signedUrl = pdfResponse.headers.get("location");
+    if (!signedUrl) {
+      console.error("[VIEWER] pdf opciones sin redirect firmado", {
+        idEvaluacion,
+        status: pdfResponse.status
+      });
+
+      return res.status(502).json({
+        ok: false,
+        code: "PDF_OPCIONES_SIN_URL",
+        message: "El PDF se generó, pero no pudimos preparar el enlace de apertura."
+      });
+    }
+
     return res.json({
       ok: true,
       data: {
-        ruta: payload.ruta || null
+        ruta: payload.ruta || null,
+        url: signedUrl
       }
     });
   } catch (error) {
