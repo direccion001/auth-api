@@ -454,6 +454,204 @@ router.get("/prospectos", async (req, res) => {
 });
 
 // ======================================================
+// PDF DE OPCIONES DE GRUPO
+// Mantiene el token del servicio de evaluaciones sólo en backend.
+// ======================================================
+
+const EVALUACION_WEBHOOK_URL =
+  process.env.EVALUACION_WEBHOOK_URL ||
+  "https://evaluacion-webhook-900393141805.us-central1.run.app";
+
+function evaluacionWebhookToken(res) {
+  const token = String(process.env.EVALUACION_WEBHOOK_TOKEN || "").trim();
+
+  if (!token) {
+    res.status(500).json({
+      ok: false,
+      code: "PDF_OPCIONES_NO_CONFIGURADO",
+      message: "El servicio de PDF de opciones no está configurado."
+    });
+    return null;
+  }
+
+  return token;
+}
+
+function validarIdEvaluacion(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+router.post("/prospectos/:id_evaluacion/pdf-opciones", async (req, res) => {
+  if (!permitir(req, res, "prospectos")) return;
+
+  if (req.auth.tipo_usuario !== "INTERNO") {
+    return res.status(403).json({
+      ok: false,
+      code: "PDF_OPCIONES_NO_AUTORIZADO",
+      message: "No tienes permiso para generar este PDF."
+    });
+  }
+
+  const idEvaluacion = validarIdEvaluacion(req.params.id_evaluacion);
+  if (!idEvaluacion) {
+    return res.status(400).json({
+      ok: false,
+      code: "EVALUACION_INVALIDA",
+      message: "La evaluación indicada no es válida."
+    });
+  }
+
+  const token = evaluacionWebhookToken(res);
+  if (!token) return;
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT id_evaluacion FROM Examenes_Evaluacion WHERE id_evaluacion = ? LIMIT 1",
+      [idEvaluacion]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        ok: false,
+        code: "EVALUACION_NO_ENCONTRADA",
+        message: "No encontramos esta evaluación."
+      });
+    }
+
+    const response = await fetch(`${EVALUACION_WEBHOOK_URL}/generar-pdf-opciones`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        token,
+        id_evaluacion: idEvaluacion
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || payload.ok === false) {
+      console.error("[VIEWER] generar pdf opciones", {
+        idEvaluacion,
+        status: response.status,
+        error: payload.error
+      });
+
+      return res.status(response.status >= 400 ? response.status : 502).json({
+        ok: false,
+        code: "ERROR_GENERANDO_PDF_OPCIONES",
+        message: payload.error || "No pudimos generar el PDF de opciones."
+      });
+    }
+
+    const pdfParams = new URLSearchParams({
+      token,
+      id_evaluacion: String(idEvaluacion)
+    });
+
+    const pdfResponse = await fetch(
+      `${EVALUACION_WEBHOOK_URL}/pdf-opciones?${pdfParams.toString()}`,
+      { redirect: "manual" }
+    );
+
+    const signedUrl = pdfResponse.headers.get("location");
+    if (!signedUrl) {
+      console.error("[VIEWER] pdf opciones sin redirect firmado", {
+        idEvaluacion,
+        status: pdfResponse.status
+      });
+
+      return res.status(502).json({
+        ok: false,
+        code: "PDF_OPCIONES_SIN_URL",
+        message: "El PDF se generó, pero no pudimos preparar el enlace de apertura."
+      });
+    }
+
+    return res.json({
+      ok: true,
+      data: {
+        ruta: payload.ruta || null,
+        url: signedUrl
+      }
+    });
+  } catch (error) {
+    console.error("[VIEWER] generar pdf opciones", error);
+    return res.status(502).json({
+      ok: false,
+      code: "ERROR_GENERANDO_PDF_OPCIONES",
+      message: "No pudimos conectar con el servicio de PDF."
+    });
+  }
+});
+
+router.get("/prospectos/:id_evaluacion/pdf-opciones", async (req, res) => {
+  if (!permitir(req, res, "prospectos")) return;
+
+  if (req.auth.tipo_usuario !== "INTERNO") {
+    return res.status(403).json({
+      ok: false,
+      code: "PDF_OPCIONES_NO_AUTORIZADO",
+      message: "No tienes permiso para consultar este PDF."
+    });
+  }
+
+  const idEvaluacion = validarIdEvaluacion(req.params.id_evaluacion);
+  if (!idEvaluacion) {
+    return res.status(400).json({
+      ok: false,
+      code: "EVALUACION_INVALIDA",
+      message: "La evaluación indicada no es válida."
+    });
+  }
+
+  const token = evaluacionWebhookToken(res);
+  if (!token) return;
+
+  try {
+    const params = new URLSearchParams({
+      token,
+      id_evaluacion: String(idEvaluacion)
+    });
+
+    const response = await fetch(
+      `${EVALUACION_WEBHOOK_URL}/pdf-opciones?${params.toString()}`
+    );
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      return res.status(response.status).json({
+        ok: false,
+        code: "PDF_OPCIONES_NO_DISPONIBLE",
+        message: payload.error || "El PDF todavía no está disponible."
+      });
+    }
+
+    const contentType = response.headers.get("content-type") || "application/pdf";
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="opciones_evaluacion_${idEvaluacion}.pdf"`
+    );
+    res.setHeader("Cache-Control", "no-store");
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error("[VIEWER] abrir pdf opciones", error);
+    return res.status(502).json({
+      ok: false,
+      code: "ERROR_ABRIENDO_PDF_OPCIONES",
+      message: "No pudimos abrir el PDF de opciones."
+    });
+  }
+});
+
+// ======================================================
 // CONTACTOS DE PROSPECTO
 // Relación oficial: Examenes_Evaluacion.id_appsheet
 //                    contactos_examenes_evaluacion.id_appsheet
