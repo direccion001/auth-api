@@ -52,7 +52,10 @@ router.get("/:id_alumno/asistencias", async (req, res) => {
   try {
     const params = [idAlumno];
     let scope = "";
-    if (!req.auth.acceso_global) {
+    if (req.auth.alcance === "MAESTRO") {
+      scope = " AND EXISTS (SELECT 1 FROM GRUPOS gscope WHERE gscope.IdGrupo = v.IdGrupo AND gscope.IdMaestroTitular = ?)";
+      params.push(req.auth.id_usuario);
+    } else if (!req.auth.acceso_global) {
       scope = " AND v.IdPlantel = ?";
       params.push(req.auth.id_plantel);
     }

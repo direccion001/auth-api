@@ -9,6 +9,9 @@ const router = express.Router();
 router.use(requireAuth, requireInterno);
 
 router.get("/", async (req, res) => {
+  if (!["Admin", "Directivo"].includes(req.auth.rol)) {
+    return res.status(403).json({ ok: false, code: "ROL_NO_AUTORIZADO", message: "No tienes permiso para consultar usuarios internos." });
+  }
   try {
     const params = [];
 

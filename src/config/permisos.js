@@ -25,8 +25,7 @@ const MODULOS = {
     "dashboard"
   ],
 
-  // Preparado para habilitar acceso de maestros más adelante.
-  Maestro: []
+  Maestro: ["asistencias", "calificaciones"]
 };
 
 const POLITICAS = {

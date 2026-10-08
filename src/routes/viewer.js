@@ -25,7 +25,7 @@ function puedeVerFinanzas(req) {
 
 function aplicarAlcance(req, sql, params, opciones = {}) {
   const columnaPlantel = opciones.columnaPlantel || "IdPlantel";
-  const columnaMaestroTitular = opciones.columnaMaestroTitular || null;
+  const columnaIdGrupo = opciones.columnaIdGrupo || null;
 
   if (req.auth.alcance === "PLANTEL") {
     sql += ` AND ${columnaPlantel} = ?`;
@@ -34,11 +34,12 @@ function aplicarAlcance(req, sql, params, opciones = {}) {
   }
 
   if (req.auth.alcance === "MAESTRO") {
-    if (!columnaMaestroTitular) {
+    if (!columnaIdGrupo) {
       throw new Error("ALCANCE_MAESTRO_NO_SOPORTADO");
     }
 
-    sql += ` AND ${columnaMaestroTitular} = ?`;
+    // Titularidad vigente: un maestro anterior pierde acceso al cambiar el titular.
+    sql += ` AND EXISTS (SELECT 1 FROM GRUPOS gscope WHERE gscope.IdGrupo = ${columnaIdGrupo} AND gscope.IdMaestroTitular = ?)`;
     params.push(req.auth.id_usuario);
     return sql;
   }
@@ -242,8 +243,11 @@ router.get("/asistencias", async (req, res) => {
   if (!permitir(req, res, "asistencias")) return;
 
   try {
-    const params = [];
+    const params = req.auth.alcance === "MAESTRO" ? [req.auth.id_usuario] : [];
     const incluirFinanzas = puedeVerFinanzas(req);
+    const historicoMaestro = req.auth.alcance === "MAESTRO"
+      ? "AND EXISTS (SELECT 1 FROM GRUPOS hgrupo WHERE hgrupo.IdGrupo = vh.IdGrupo AND hgrupo.IdMaestroTitular = ?)"
+      : "";
 
     const comentarioClaseSelect = req.auth.acceso_global
       ? "ComentarioClase"
@@ -320,17 +324,18 @@ router.get("/asistencias", async (req, res) => {
       FROM vw_company_viewer_asistencias v
       LEFT JOIN (
         SELECT IdAlumno AS IdAlumnoHistorial, MIN(Fecha) AS PrimeraAsistenciaAlumno
-        FROM vw_company_viewer_asistencias
+        FROM vw_company_viewer_asistencias vh
         WHERE Presente IS NOT NULL
           AND TRIM(CAST(Presente AS CHAR)) <> ''
+          ${historicoMaestro}
         GROUP BY IdAlumno
       ) hist ON hist.IdAlumnoHistorial = v.IdAlumno
       WHERE 1 = 1
     `;
 
     sql = aplicarAlcance(req, sql, params, {
-      columnaPlantel: "IdPlantel",
-      columnaMaestroTitular: "IdMaestroTitular"
+      columnaPlantel: "v.IdPlantel",
+      columnaIdGrupo: "v.IdGrupo"
     });
 
     if (req.query.desde) {
@@ -383,7 +388,10 @@ router.get("/calificaciones", async (req, res) => {
   if (!permitir(req, res, "calificaciones")) return;
 
   try {
-    const params = [];
+    const params = req.auth.alcance === "MAESTRO" ? [req.auth.id_usuario] : [];
+    const historicoMaestro = req.auth.alcance === "MAESTRO"
+      ? "AND EXISTS (SELECT 1 FROM GRUPOS hgrupo WHERE hgrupo.IdGrupo = hc.IdGrupo AND hgrupo.IdMaestroTitular = ?)"
+      : "";
 
     let sql = `
       SELECT
@@ -392,15 +400,16 @@ router.get("/calificaciones", async (req, res) => {
       FROM vw_company_viewer_calificaciones c
       LEFT JOIN (
         SELECT IdAlumno, MIN(FechaCalificacion) AS PrimeraCalificacionAlumno
-        FROM vw_company_viewer_calificaciones
+        FROM vw_company_viewer_calificaciones hc
         WHERE Calificacion IS NOT NULL
           AND Calificacion <> 0
+          ${historicoMaestro}
         GROUP BY IdAlumno
       ) hist ON hist.IdAlumno = c.IdAlumno
       WHERE 1 = 1
     `;
 
-    sql = aplicarAlcance(req, sql, params, { columnaPlantel: "c.IdPlantel" });
+    sql = aplicarAlcance(req, sql, params, { columnaPlantel: "c.IdPlantel", columnaIdGrupo: "c.IdGrupo" });
 
     if (req.query.status) {
       sql += " AND StatusAlumno = ?";
@@ -746,7 +755,10 @@ router.get("/grupos", async (req, res) => {
       WHERE 1 = 1
     `;
 
-    if (!req.auth.acceso_global) {
+    if (req.auth.alcance === "MAESTRO") {
+      sql += " AND EXISTS (SELECT 1 FROM GRUPOS g WHERE g.IdGrupo = vw_company_viewer_grupos.IdGrupo AND g.IdMaestroTitular = ?)";
+      params.push(req.auth.id_usuario);
+    } else if (!req.auth.acceso_global) {
       sql += " AND IdPlantel = ?";
       params.push(req.auth.id_plantel);
     } else if (req.query.id_plantel) {
@@ -786,14 +798,21 @@ router.get("/grupos", async (req, res) => {
 router.get("/planteles", async (req, res) => {
   try {
     const params = [];
+    // El maestro necesita únicamente los planteles de sus grupos, no las métricas globales.
+    const columnas = req.auth.alcance === "MAESTRO"
+      ? "IdPlantel, Plantel, StatusPlantel, LogoUrl, NULL AS CorreoCliente, NULL AS AlumnosActivos, NULL AS AlumnosInactivos, NULL AS GruposActivos, NULL AS GruposInactivos"
+      : "*";
 
     let sql = `
-      SELECT *
+      SELECT ${columnas}
       FROM vw_company_viewer_planteles
       WHERE 1 = 1
     `;
 
-    if (!req.auth.acceso_global) {
+    if (req.auth.alcance === "MAESTRO") {
+      sql += " AND EXISTS (SELECT 1 FROM GRUPOS g WHERE g.IdPlantel = vw_company_viewer_planteles.IdPlantel AND g.IdMaestroTitular = ?)";
+      params.push(req.auth.id_usuario);
+    } else if (!req.auth.acceso_global) {
       sql += " AND IdPlantel = ?";
       params.push(req.auth.id_plantel);
     } else if (req.query.id_plantel) {

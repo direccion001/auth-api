@@ -7,6 +7,19 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// Maestro tiene acceso únicamente a sus reportes académicos y registro de asistencia.
+// Las fichas y seguimientos contienen información fuera de ese alcance.
+router.use((req, res, next) => {
+  if (req.auth.alcance === "MAESTRO") {
+    return res.status(403).json({
+      ok: false,
+      code: "MODULO_NO_AUTORIZADO",
+      message: "No tienes acceso al módulo de seguimientos."
+    });
+  }
+  return next();
+});
+
 function tieneModuloSeguimientos(req) {
   return req.auth.modulos.includes("seguimientos");
 }

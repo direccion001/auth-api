@@ -62,11 +62,12 @@ async function requireAuth(req, res, next) {
         `
         SELECT
           \`ID Usuario\` AS id_usuario,
-          Rol AS rol
+          Rol AS rol,
+          Correo AS correo
         FROM USUARIOS
         WHERE \`ID Usuario\` = ?
           AND Status = 'Activo'
-          AND Rol IN ('Admin', 'Directivo')
+          AND Rol IN ('Admin', 'Directivo', 'Maestro')
         LIMIT 1
         `,
         [payload.id_usuario]
