@@ -2,7 +2,7 @@
 -- Ejecutar una sola vez en ipr_db antes de desplegar el backend.
 -- Verificar previamente SHOW CREATE TABLE `AGENDA GRUPOS`.
 ALTER TABLE `AGENDA GRUPOS`
-  ADD COLUMN `Activo` TINYINT(1) NOT NULL DEFAULT 1;
+  ADD COLUMN `Activo` TINYINT(1) NULL DEFAULT 1;
 
 -- Se crea una nueva vista; VW_AGENDA_CLASES_PENDIENTES no se modifica.
 -- IdMaestroTitularAgenda se conserva sólo como histórico.
@@ -27,7 +27,7 @@ SELECT
 FROM `AGENDA GRUPOS` ag
 INNER JOIN GRUPOS g ON g.IdGrupo = ag.IdGrupo
 LEFT JOIN PLANTELES p ON p.IdPlantel = g.IdPlantel
-WHERE ag.Activo = 1
+WHERE COALESCE(ag.Activo, 1) = 1
   AND ag.Fecha IS NOT NULL
   AND NOT EXISTS (
     SELECT 1
