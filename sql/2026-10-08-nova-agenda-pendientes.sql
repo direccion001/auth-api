@@ -11,7 +11,8 @@ CREATE OR REPLACE VIEW `vw_nova_asistencias_pendientes` AS
 SELECT
   ag.IdAgenda,
   ag.Fecha,
-  ag.IdPlantel,
+  g.IdPlantel,
+  ag.IdPlantel AS IdPlantelAgenda,
   ag.IdGrupo,
   ag.IdMaestroTitular AS IdMaestroTitularAgenda,
   g.IdMaestroTitular AS IdMaestroTitularActual,
@@ -25,7 +26,7 @@ SELECT
   p.NombrePlantel AS Plantel
 FROM `AGENDA GRUPOS` ag
 INNER JOIN GRUPOS g ON g.IdGrupo = ag.IdGrupo
-LEFT JOIN PLANTELES p ON p.IdPlantel = ag.IdPlantel
+LEFT JOIN PLANTELES p ON p.IdPlantel = g.IdPlantel
 WHERE ag.Activo = 1
   AND ag.Fecha IS NOT NULL
   AND NOT EXISTS (
