@@ -446,6 +446,16 @@ router.post("/", async (req, res) => {
       }
       alumnosDb = rows;
     }
+    if (esMaestro(req)) {
+      // El Maestro debe pasar lista a todos los alumnos actuales, no a un subconjunto arbitrario.
+      const [conteos] = await connection.query(
+        "SELECT COUNT(*) AS total FROM ALUMNOS WHERE IdPlantel = ? AND IdGrupo = ? AND Status IN ('activo', 'en formación')",
+        [grupo.IdPlantel, idGrupo]
+      );
+      if (Number(conteos[0]?.total || 0) !== idsAlumnos.length) {
+        const error = new Error("ALUMNOS_INCOMPLETOS"); error.status = 409; throw error;
+      }
+    }
 
     // Evita duplicados aunque una asistencia histórica no use el IdAsistencia estándar.
     const [existentes] = await connection.query(
@@ -565,6 +575,7 @@ router.post("/", async (req, res) => {
       CAPITULO_INVALIDO: "El capítulo está fuera del rango del curso.",
       ALUMNOS_INVALIDOS: "Uno o más alumnos no están disponibles.",
       ALUMNOS_FUERA_DE_GRUPO: "Uno o más alumnos no pertenecen al grupo regular.",
+      ALUMNOS_INCOMPLETOS: "Debes registrar la asistencia de todos los alumnos actuales del grupo.",
       ESTADO_ASISTENCIA_INVALIDO: "Revisa los estados de asistencia.",
       ASISTENCIA_INCONSISTENTE: "Un alumno que asistió no puede quedar como falta justificada."
     };
