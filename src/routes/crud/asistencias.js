@@ -383,7 +383,7 @@ router.post("/", async (req, res) => {
       );
       agenda = agendas[0] || null;
       if (!agenda || Number(agenda.Activo) !== 1 ||
-          String(agenda.IdGrupo) !== idGrupo || String(agenda.IdPlantel) !== String(grupo.IdPlantel) ||
+          String(agenda.IdGrupo) !== idGrupo ||
           String(agenda.Fecha).slice(0, 10) !== fecha) {
         const error = new Error("AGENDA_NO_AUTORIZADA"); error.status = 403; throw error;
       }
