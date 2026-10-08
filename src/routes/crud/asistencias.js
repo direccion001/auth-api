@@ -115,7 +115,9 @@ async function obtenerGrupo(connection, idGrupo) {
 
 
 function esAdminDirectivo(req) {
-  return req.auth?.tipo_usuario === "INTERNO" && ["admin", "administrador", "directivo"].includes(rolInterno(req));
+  return req.auth?.tipo_usuario === "INTERNO"
+    && req.auth?.modulos?.includes("asistencias")
+    && ["admin", "administrador", "directivo"].includes(rolInterno(req));
 }
 
 router.get("/pendientes", async (req, res) => {
