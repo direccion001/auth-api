@@ -113,6 +113,76 @@ async function obtenerGrupo(connection, idGrupo) {
   return rows[0] || null;
 }
 
+
+function esAdminDirectivo(req) {
+  return req.auth?.tipo_usuario === "INTERNO" && ["admin", "administrador", "directivo"].includes(rolInterno(req));
+}
+
+router.get("/pendientes", async (req, res) => {
+  if (!puedeRegistrar(req)) {
+    return res.status(403).json({ ok: false, code: "ASISTENCIA_NO_AUTORIZADA", message: "No tienes permiso para consultar pendientes." });
+  }
+  const fechaMaxima = fechaHoyMexico();
+  const params = [fechaMaxima];
+  let sql = `
+    SELECT p.IdAgenda, p.Fecha, p.IdPlantel, p.IdGrupo,
+           p.Grupo, p.Plantel, p.HoraInicio, p.HoraFin,
+           p.EsExtraHelp, p.StatusGrupo
+    FROM vw_nova_asistencias_pendientes p
+    WHERE p.Fecha <= ?
+  `;
+  if (esMaestro(req)) {
+    sql += " AND p.IdMaestroTitularActual = ? AND p.EsExtraHelp = 0 AND p.StatusGrupo = 'Activo'";
+    params.push(req.auth.id_usuario);
+  } else if (req.query.id_plantel) {
+    sql += " AND p.IdPlantel = ?";
+    params.push(String(req.query.id_plantel));
+  }
+  sql += " ORDER BY p.Fecha DESC, p.HoraInicio ASC, p.Grupo ASC";
+  try {
+    const [rows] = await pool.query(sql, params);
+    return res.json({ ok: true, data: rows, fecha_hoy: fechaMaxima });
+  } catch (error) {
+    console.error("[CRUD ASISTENCIAS] pendientes", error);
+    return res.status(500).json({ ok: false, code: "ERROR_PENDIENTES", message: "No pudimos consultar las asistencias pendientes." });
+  }
+});
+
+router.patch("/pendientes/:idAgenda/inactivar", async (req, res) => {
+  if (!esAdminDirectivo(req)) {
+    return res.status(403).json({ ok: false, code: "ROL_NO_AUTORIZADO", message: "Sólo Administración puede inactivar pendientes." });
+  }
+  const idAgenda = String(req.params.idAgenda || "").trim();
+  if (!idAgenda) return res.status(400).json({ ok: false, code: "AGENDA_REQUERIDA", message: "Selecciona un pendiente." });
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query(
+      "SELECT IdAgenda, IdGrupo, Fecha, Activo FROM \`AGENDA GRUPOS\` WHERE IdAgenda = ? FOR UPDATE",
+      [idAgenda]
+    );
+    if (!rows.length || Number(rows[0].Activo) !== 1) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, code: "PENDIENTE_NO_DISPONIBLE", message: "El pendiente ya no está disponible." });
+    }
+    const agenda = rows[0];
+    const [asistencias] = await conn.query("SELECT 1 FROM ASISTENCIAS WHERE IdGrupo = ? AND FechaClase = ? LIMIT 1", [agenda.IdGrupo, agenda.Fecha]);
+    if (asistencias.length) {
+      await conn.rollback();
+      return res.status(409).json({ ok: false, code: "ASISTENCIA_YA_REGISTRADA", message: "La asistencia ya fue registrada." });
+    }
+    await conn.query("UPDATE \`AGENDA GRUPOS\` SET Activo = 0 WHERE IdAgenda = ?", [idAgenda]);
+    await conn.commit();
+    return res.json({ ok: true, message: "Pendiente inactivado.", data: { id_agenda: idAgenda } });
+  } catch (error) {
+    await conn.rollback().catch(() => {});
+    console.error("[CRUD ASISTENCIAS] inactivar pendiente", error);
+    return res.status(500).json({ ok: false, code: "ERROR_INACTIVANDO_PENDIENTE", message: "No pudimos inactivar el pendiente." });
+  } finally {
+    conn.release();
+  }
+});
+
 router.get("/contexto", async (req, res) => {
   if (!puedeRegistrar(req)) {
     return res.status(403).json({ ok: false, code: "ASISTENCIA_NO_AUTORIZADA", message: "No tienes permiso para registrar asistencias." });
@@ -268,6 +338,7 @@ router.post("/", async (req, res) => {
   const body = req.body || {};
   const idGrupo = String(body.id_grupo || "").trim();
   const fecha = String(body.fecha_clase || "").trim();
+  const idAgenda = String(body.id_agenda || "").trim();
   const idMaestroQueDioClase = String(body.id_maestro_que_dio_clase || "").trim();
   const cuota = Number(body.cuota);
   const curso = normalizarTexto(body.curso);
@@ -280,6 +351,9 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ ok: false, code: "DATOS_ASISTENCIA_INVALIDOS", message: "Revisa grupo, fecha, maestro y cuota." });
   }
 
+  if (!curso || !Number.isInteger(capitulo) || capitulo < 1 || !Number.isInteger(pagina) || pagina < 1) {
+    return res.status(400).json({ ok: false, code: "CONTENIDO_REQUERIDO", message: "Curso, capítulo y página son obligatorios." });
+  }
   if (!alumnos.length && !puedeRegistrarSinAlumnos(req)) {
     return res.status(409).json({ ok: false, code: "ALUMNOS_REQUERIDOS", message: "Debes registrar al menos un alumno en la asistencia." });
   }
@@ -301,11 +375,26 @@ router.post("/", async (req, res) => {
     if (esMaestro(req) && idMaestroQueDioClase !== String(req.auth.id_usuario)) {
       const error = new Error("MAESTRO_NO_AUTORIZADO"); error.status = 403; throw error;
     }
-    if (!fechaValidaParaGrupo(grupo, fecha)) {
+    let agenda = null;
+    if (idAgenda) {
+      const [agendas] = await connection.query(
+        "SELECT IdAgenda, IdGrupo, IdPlantel, Fecha, HoraInicio, HoraFin, Activo FROM \`AGENDA GRUPOS\` WHERE IdAgenda = ? FOR UPDATE",
+        [idAgenda]
+      );
+      agenda = agendas[0] || null;
+      if (!agenda || Number(agenda.Activo) !== 1 ||
+          String(agenda.IdGrupo) !== idGrupo || String(agenda.IdPlantel) !== String(grupo.IdPlantel) ||
+          String(agenda.Fecha).slice(0, 10) !== fecha) {
+        const error = new Error("AGENDA_NO_AUTORIZADA"); error.status = 403; throw error;
+      }
+    }
+    if (esMaestro(req) && !agenda) {
+      const error = new Error("AGENDA_REQUERIDA"); error.status = 403; throw error;
+    }
+    if (!agenda && !fechaValidaParaGrupo(grupo, fecha)) {
       const error = new Error("DIA_NO_VALIDO"); error.status = 409; throw error;
     }
-
-    const duracion = duracionHoras(grupo.HoraInicio, grupo.HoraFin);
+    const duracion = duracionHoras(agenda?.HoraInicio || grupo.HoraInicio, agenda?.HoraFin || grupo.HoraFin);
     if (duracion === null) {
       const error = new Error("HORARIO_INVALIDO"); error.status = 409; throw error;
     }
@@ -325,7 +414,7 @@ router.post("/", async (req, res) => {
       if (!cursoRows.length) {
         const error = new Error("CURSO_INVALIDO"); error.status = 400; throw error;
       }
-      if (capitulo !== null && (capitulo < Number(cursoRows[0].primero) || capitulo > Number(cursoRows[0].ultimo))) {
+      if (capitulo < Number(cursoRows[0].primero) || capitulo > Number(cursoRows[0].ultimo)) {
         const error = new Error("CAPITULO_INVALIDO"); error.status = 400; throw error;
       }
     }
@@ -392,6 +481,9 @@ router.post("/", async (req, res) => {
       const alumno = alumnosPorId.get(idAlumno);
       const presente = String(item.presente || "").trim();
       const justificada = String(item.justificada || "No").trim();
+      const tituloComentario = normalizarTexto(item.titulo_comentario);
+      const comentarioAlumno = normalizarTexto(item.comentario);
+      const esOtro = item.es_otro === true;
 
       if (!alumno || !["Asistio", "Falto"].includes(presente) || !["Si", "No"].includes(justificada)) {
         const error = new Error("ESTADO_ASISTENCIA_INVALIDO"); error.status = 400; throw error;
@@ -399,12 +491,20 @@ router.post("/", async (req, res) => {
       if (presente === "Asistio" && justificada === "Si") {
         const error = new Error("ASISTENCIA_INCONSISTENTE"); error.status = 400; throw error;
       }
+      if (esMaestro(req) && justificada === "Si") {
+        const error = new Error("JUSTIFICACION_NO_AUTORIZADA"); error.status = 403; throw error;
+      }
+      const motivos = ["Por enfermedad", "Por carga laboral", "Por asuntos personales", "Por vacaciones", "Por fallas técnicas"];
+      if (justificada === "Si" && (!esAdminDirectivo(req) || !tituloComentario ||
+          tituloComentario.length > 100 || (!esOtro && !motivos.includes(tituloComentario)))) {
+        const error = new Error("MOTIVO_JUSTIFICACION_INVALIDO"); error.status = 400; throw error;
+      }
 
       await connection.query(
         `INSERT INTO DETALLE_ASISTENCIAS (
           IdDetalle, IdAsistenciaInterno, IdAsistencia, IdGrupo, IdAlumno, Fecha,
-          NombreAlumno, Presente, Justificada, DiasClase
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          NombreAlumno, Presente, Justificada, DiasClase, TituloComentario, Comentario
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           crypto.randomUUID(),
           idInterno,
@@ -415,7 +515,9 @@ router.post("/", async (req, res) => {
           [alumno.Nombre, alumno.Apellidos].filter(Boolean).join(" "),
           presente,
           justificada,
-          grupo.DiasClase || null
+          grupo.DiasClase || null,
+          justificada === "Si" ? tituloComentario : null,
+          justificada === "Si" ? comentarioAlumno : null
         ]
       );
     }
@@ -436,7 +538,11 @@ router.post("/", async (req, res) => {
     const mensajes = {
       GRUPO_NO_DISPONIBLE: "El grupo no está disponible.",
       GRUPO_NO_AUTORIZADO: "Sólo puedes registrar asistencia de tus grupos regulares.",
-      FECHA_NO_AUTORIZADA: "El maestro sólo puede registrar la fecha actual.",
+      FECHA_NO_AUTORIZADA: "No registraste esta asistencia a tiempo. Comunícate con Administración.",
+      AGENDA_REQUERIDA: "Selecciona una clase pendiente de hoy para registrar asistencia.",
+      AGENDA_NO_AUTORIZADA: "Este pendiente ya no está disponible o no corresponde al grupo y la fecha.",
+      JUSTIFICACION_NO_AUTORIZADA: "Los maestros no pueden justificar faltas.",
+      MOTIVO_JUSTIFICACION_INVALIDO: "Selecciona un motivo de justificación válido.",
       MAESTRO_NO_AUTORIZADO: "El maestro debe registrar la clase a su propio nombre.",
       CUOTA_INVALIDA: "No se encontró una cuota válida para el grupo.",
       DIA_NO_VALIDO: "Este no es un día válido para el grupo seleccionado.",
