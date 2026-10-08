@@ -7,7 +7,7 @@ ALTER TABLE `AGENDA GRUPOS`
 -- Se crea una nueva vista; VW_AGENDA_CLASES_PENDIENTES no se modifica.
 -- IdMaestroTitularAgenda se conserva sólo como histórico.
 -- El API aplicará el alcance del Maestro usando IdMaestroTitularActual.
-CREATE OR REPLACE VIEW `vw_nova_asistencias_pendientes` AS
+CREATE OR REPLACE VIEW `vw_company_viewer_asistencias_pendientes` AS
 SELECT
   ag.IdAgenda,
   ag.Fecha,
@@ -38,7 +38,7 @@ WHERE ag.Activo = 1
 
 -- Verificar después de aplicar:
 -- SHOW CREATE TABLE `AGENDA GRUPOS`;
--- SHOW CREATE VIEW vw_nova_asistencias_pendientes;
+-- SHOW CREATE VIEW vw_company_viewer_asistencias_pendientes;
 -- SELECT Fecha, IdGrupo, COUNT(*) AS n
---   FROM vw_nova_asistencias_pendientes
+--   FROM vw_company_viewer_asistencias_pendientes
 --   GROUP BY Fecha, IdGrupo HAVING n > 1;
