@@ -161,7 +161,7 @@ router.patch("/pendientes/:idAgenda/inactivar", async (req, res) => {
       "SELECT IdAgenda, IdGrupo, Fecha, Activo FROM \`AGENDA GRUPOS\` WHERE IdAgenda = ? FOR UPDATE",
       [idAgenda]
     );
-    if (!rows.length || Number(rows[0].Activo) !== 1) {
+    if (!rows.length || Number(rows[0].Activo ?? 1) !== 1) {
       await conn.rollback();
       return res.status(404).json({ ok: false, code: "PENDIENTE_NO_DISPONIBLE", message: "El pendiente ya no está disponible." });
     }
@@ -382,7 +382,7 @@ router.post("/", async (req, res) => {
         [idAgenda]
       );
       agenda = agendas[0] || null;
-      if (!agenda || Number(agenda.Activo) !== 1 ||
+      if (!agenda || Number(agenda.Activo ?? 1) !== 1 ||
           String(agenda.IdGrupo) !== idGrupo ||
           String(agenda.Fecha).slice(0, 10) !== fecha) {
         const error = new Error("AGENDA_NO_AUTORIZADA"); error.status = 403; throw error;
