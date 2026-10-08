@@ -790,9 +790,13 @@ router.get("/grupos", async (req, res) => {
 router.get("/planteles", async (req, res) => {
   try {
     const params = [];
+    // El maestro necesita únicamente los planteles de sus grupos, no las métricas globales.
+    const columnas = req.auth.alcance === "MAESTRO"
+      ? "IdPlantel, Plantel, StatusPlantel, LogoUrl, NULL AS CorreoCliente, NULL AS AlumnosActivos, NULL AS AlumnosInactivos, NULL AS GruposActivos, NULL AS GruposInactivos"
+      : "*";
 
     let sql = `
-      SELECT *
+      SELECT ${columnas}
       FROM vw_company_viewer_planteles
       WHERE 1 = 1
     `;
