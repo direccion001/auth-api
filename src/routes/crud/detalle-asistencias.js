@@ -44,7 +44,8 @@ function validarTitulo(intencion, esOtro, titulo) {
 }
 
 router.patch("/:idDetalle", async (req, res) => {
-  if (!req.auth.modulos.includes("asistencias")) {
+  if (!["admin", "administrador", "directivo"].includes(String(req.auth.rol || "").toLowerCase()) ||
+      !req.auth.modulos.includes("asistencias")) {
     return res.status(403).json({
       ok: false,
       code: "MODULO_NO_AUTORIZADO",
