@@ -128,7 +128,7 @@ router.get("/pendientes", async (req, res) => {
     SELECT p.IdAgenda, p.Fecha, p.IdPlantel, p.IdGrupo,
            p.Grupo, p.Plantel, p.HoraInicio, p.HoraFin,
            p.EsExtraHelp, p.StatusGrupo
-    FROM vw_nova_asistencias_pendientes p
+    FROM vw_company_viewer_asistencias_pendientes p
     WHERE p.Fecha <= ?
   `;
   if (esMaestro(req)) {
