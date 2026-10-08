@@ -1,8 +1,22 @@
 -- NOVA Company Viewer / Registrar asistencias desde AGENDA GRUPOS
--- Ejecutar una sola vez en ipr_db antes de desplegar el backend.
--- Verificar previamente SHOW CREATE TABLE `AGENDA GRUPOS`.
-ALTER TABLE `AGENDA GRUPOS`
-  ADD COLUMN `Activo` TINYINT(1) NULL DEFAULT 1;
+-- Ejecutar en ipr_db antes de desplegar el backend.
+-- Compatible tanto con una BD nueva como con el ALTER que ya pudo ejecutarse.
+-- AppSheet puede omitir Activo (default 1) o enviar NULL (la vista lo trata como activo).
+SET @agenda_activo_existe = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'AGENDA GRUPOS'
+    AND COLUMN_NAME = 'Activo'
+);
+SET @agenda_activo_ddl = IF(
+  @agenda_activo_existe = 0,
+  'ALTER TABLE `AGENDA GRUPOS` ADD COLUMN `Activo` TINYINT(1) NULL DEFAULT 1',
+  'ALTER TABLE `AGENDA GRUPOS` MODIFY COLUMN `Activo` TINYINT(1) NULL DEFAULT 1'
+);
+PREPARE agenda_activo_stmt FROM @agenda_activo_ddl;
+EXECUTE agenda_activo_stmt;
+DEALLOCATE PREPARE agenda_activo_stmt;
 
 -- Se crea una nueva vista; VW_AGENDA_CLASES_PENDIENTES no se modifica.
 -- IdMaestroTitularAgenda se conserva sólo como histórico.
