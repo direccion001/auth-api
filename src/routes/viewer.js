@@ -276,6 +276,14 @@ router.get("/asistencias", async (req, res) => {
         Nombre,
         NombreAlumno,
         ApellidosAlumno,
+        (
+          SELECT COALESCE(
+            NULLIF(TRIM(al.Telefono), ''),
+            NULLIF(TRIM(al.Telefono2), '')
+          )
+          FROM ALUMNOS al
+          WHERE al.IdAlumno = v.IdAlumno
+        ) AS Telefono,
         StatusAlumno,
         FechaRegistroAlumno,
         FechaBajaAlumno,
