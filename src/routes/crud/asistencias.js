@@ -125,8 +125,21 @@ router.get("/pendientes", async (req, res) => {
     return res.status(403).json({ ok: false, code: "ASISTENCIA_NO_AUTORIZADA", message: "No tienes permiso para consultar pendientes." });
   }
   const fechaMaxima = fechaHoyMexico();
+  const inactivas = req.query.estado === "inactivas";
+  if (inactivas && !esAdminDirectivo(req)) {
+    return res.status(403).json({ ok: false, code: "ROL_NO_AUTORIZADO", message: "Sólo Administración puede consultar agendas inactivas." });
+  }
   const params = [fechaMaxima];
-  let sql = `
+  let sql = inactivas ? `
+    SELECT ag.IdAgenda, ag.Fecha, g.IdPlantel, ag.IdGrupo,
+           g.NombreGrupo AS Grupo, pl.NombrePlantel AS Plantel, ag.HoraInicio, ag.HoraFin,
+           COALESCE(g.EsExtraHelp, 0) AS EsExtraHelp, g.Status AS StatusGrupo
+    FROM \`AGENDA GRUPOS\` ag
+    JOIN GRUPOS g ON g.IdGrupo = ag.IdGrupo
+    LEFT JOIN PLANTELES pl ON pl.IdPlantel = g.IdPlantel
+    WHERE ag.Fecha <= ? AND ag.Activo = 0
+      AND NOT EXISTS (SELECT 1 FROM ASISTENCIAS a WHERE a.IdGrupo = ag.IdGrupo AND a.FechaClase = ag.Fecha)
+  ` : `
     SELECT p.IdAgenda, p.Fecha, p.IdPlantel, p.IdGrupo,
            p.Grupo, p.Plantel, p.HoraInicio, p.HoraFin,
            p.EsExtraHelp, p.StatusGrupo
@@ -137,10 +150,10 @@ router.get("/pendientes", async (req, res) => {
     sql += " AND p.IdMaestroTitularActual = ? AND p.EsExtraHelp = 0 AND p.StatusGrupo = 'Activo'";
     params.push(req.auth.id_usuario);
   } else if (req.query.id_plantel) {
-    sql += " AND p.IdPlantel = ?";
+    sql += inactivas ? " AND g.IdPlantel = ?" : " AND p.IdPlantel = ?";
     params.push(String(req.query.id_plantel));
   }
-  sql += " ORDER BY p.Fecha DESC, p.HoraInicio ASC, p.Grupo ASC";
+  sql += inactivas ? " ORDER BY ag.Fecha DESC, ag.HoraInicio ASC, g.NombreGrupo ASC" : " ORDER BY p.Fecha DESC, p.HoraInicio ASC, p.Grupo ASC";
   try {
     const [rows] = await pool.query(sql, params);
     return res.json({ ok: true, data: rows, fecha_hoy: fechaMaxima });
@@ -185,6 +198,37 @@ router.patch("/pendientes/:idAgenda/inactivar", async (req, res) => {
   }
 });
 
+router.patch("/pendientes/:idAgenda/reactivar", async (req, res) => {
+  if (!esAdminDirectivo(req)) {
+    return res.status(403).json({ ok: false, code: "ROL_NO_AUTORIZADO", message: "Sólo Administración puede reactivar pendientes." });
+  }
+  const idAgenda = String(req.params.idAgenda || "").trim();
+  if (!idAgenda) return res.status(400).json({ ok: false, code: "AGENDA_REQUERIDA", message: "Selecciona una agenda." });
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query("SELECT IdAgenda, IdGrupo, Fecha, Activo FROM \`AGENDA GRUPOS\` WHERE IdAgenda = ? FOR UPDATE", [idAgenda]);
+    const agenda = rows[0];
+    if (!agenda || Number(agenda.Activo ?? 1) !== 0) {
+      await conn.rollback();
+      return res.status(409).json({ ok: false, code: "AGENDA_NO_INACTIVA", message: "La agenda ya no está inactiva." });
+    }
+    const [otras] = await conn.query("SELECT IdAgenda FROM \`AGENDA GRUPOS\` WHERE IdGrupo = ? AND Fecha = ? AND IdAgenda <> ? AND Activo = 1 LIMIT 1 FOR UPDATE", [agenda.IdGrupo, agenda.Fecha, idAgenda]);
+    const [asistencias] = await conn.query("SELECT 1 FROM ASISTENCIAS WHERE IdGrupo = ? AND FechaClase = ? LIMIT 1", [agenda.IdGrupo, agenda.Fecha]);
+    if (otras.length || asistencias.length) {
+      await conn.rollback();
+      return res.status(409).json({ ok: false, code: "AGENDA_NO_REACTIVABLE", message: "Ya existe una agenda activa o asistencia registrada." });
+    }
+    await conn.query("UPDATE \`AGENDA GRUPOS\` SET Activo = 1 WHERE IdAgenda = ?", [idAgenda]);
+    await conn.commit();
+    return res.json({ ok: true, message: "Agenda reactivada.", data: { id_agenda: idAgenda } });
+  } catch (error) {
+    await conn.rollback().catch(() => {});
+    console.error("[CRUD ASISTENCIAS] reactivar", error);
+    return res.status(500).json({ ok: false, code: "ERROR_REACTIVANDO_PENDIENTE", message: "No pudimos reactivar la agenda." });
+  } finally { conn.release(); }
+});
+
 router.get("/contexto", async (req, res) => {
   if (!puedeRegistrar(req)) {
     return res.status(403).json({ ok: false, code: "ASISTENCIA_NO_AUTORIZADA", message: "No tienes permiso para registrar asistencias." });
@@ -218,7 +262,7 @@ router.get("/contexto", async (req, res) => {
       pool.query(
         `SELECT \`ID Usuario\` AS id, CONCAT_WS(' ', Nombre, Apellidos) AS nombre
          FROM USUARIOS
-         WHERE Status = 'Activo'
+         WHERE Status = 'Activo' AND LOWER(TRIM(Rol)) = 'maestro'
            ${esMaestro(req) ? "AND \`ID Usuario\` = ?" : ""}
          ORDER BY Nombre, Apellidos`,
         esMaestro(req) ? [req.auth.id_usuario] : []
@@ -378,6 +422,15 @@ router.post("/", async (req, res) => {
     }
     if (esMaestro(req) && idMaestroQueDioClase !== String(req.auth.id_usuario)) {
       const error = new Error("MAESTRO_NO_AUTORIZADO"); error.status = 403; throw error;
+    }
+    if (!esMaestro(req)) {
+      const [maestrosValidos] = await connection.query(
+        "SELECT 1 FROM USUARIOS WHERE \`ID Usuario\` = ? AND Status = 'Activo' AND LOWER(TRIM(Rol)) = 'maestro' LIMIT 1",
+        [idMaestroQueDioClase]
+      );
+      if (!maestrosValidos.length) {
+        const error = new Error("MAESTRO_NO_AUTORIZADO"); error.status = 403; throw error;
+      }
     }
     let agenda = null;
     if (idAgenda) {
