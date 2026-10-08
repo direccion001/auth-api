@@ -23,6 +23,25 @@ function puedeRegistrar(req) {
     && ["admin", "administrador", "directivo", "maestro"].includes(rolInterno(req));
 }
 
+function esMaestro(req) {
+  return req.auth?.tipo_usuario === "INTERNO" && rolInterno(req) === "maestro";
+}
+
+function fechaHoyMexico() {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const valor = (tipo) => partes.find((parte) => parte.type === tipo)?.value;
+  return `${valor("year")}-${valor("month")}-${valor("day")}`;
+}
+
+function validarGrupoMaestro(req, grupo) {
+  return !esMaestro(req) || (
+    String(grupo.IdMaestroTitular || "") === String(req.auth.id_usuario) &&
+    Number(grupo.EsExtraHelp || 0) === 0
+  );
+}
+
 function puedeRegistrarSinAlumnos(req) {
   return ["admin", "administrador", "directivo"].includes(rolInterno(req));
 }
@@ -111,6 +130,9 @@ router.get("/contexto", async (req, res) => {
     if (!grupo || String(grupo.Status || "").trim().toLowerCase() !== "activo") {
       return res.status(404).json({ ok: false, code: "GRUPO_NO_DISPONIBLE", message: "El grupo no está disponible." });
     }
+    if (!validarGrupoMaestro(req, grupo)) {
+      return res.status(403).json({ ok: false, code: "GRUPO_NO_AUTORIZADO", message: "Sólo puedes registrar tus grupos regulares." });
+    }
 
     const [ultimaRows, maestros, cursos] = await Promise.all([
       pool.query(
@@ -125,7 +147,9 @@ router.get("/contexto", async (req, res) => {
         `SELECT \`ID Usuario\` AS id, CONCAT_WS(' ', Nombre, Apellidos) AS nombre
          FROM USUARIOS
          WHERE Status = 'Activo'
-         ORDER BY Nombre, Apellidos`
+           ${esMaestro(req) ? "AND \`ID Usuario\` = ?" : ""}
+         ORDER BY Nombre, Apellidos`,
+        esMaestro(req) ? [req.auth.id_usuario] : []
       ),
       pool.query(
         `SELECT \`ID CURSO\` AS id, Nombre AS nombre, Color AS color,
@@ -183,7 +207,23 @@ router.get("/alumnos", async (req, res) => {
   }
 
   const idPlantel = String(req.query.id_plantel || "").trim();
+  const idGrupo = String(req.query.id_grupo || "").trim();
   const q = String(req.query.q || "").trim();
+
+  if (esMaestro(req)) {
+    if (!idGrupo) {
+      return res.status(400).json({ ok: false, code: "GRUPO_REQUERIDO", message: "Selecciona uno de tus grupos." });
+    }
+    try {
+      const grupo = await obtenerGrupo(pool, idGrupo);
+      if (!grupo || !validarGrupoMaestro(req, grupo) || String(grupo.IdPlantel) !== idPlantel || String(grupo.Status).toLowerCase() !== "activo") {
+        return res.status(403).json({ ok: false, code: "GRUPO_NO_AUTORIZADO", message: "No puedes buscar alumnos fuera de tus grupos regulares." });
+      }
+    } catch (error) {
+      console.error("[CRUD ASISTENCIAS] alcance alumnos", error);
+      return res.status(500).json({ ok: false, code: "ERROR_ALUMNOS_ASISTENCIA", message: "No pudimos validar el grupo." });
+    }
+  }
 
   if (!idPlantel) {
     return res.status(400).json({ ok: false, code: "PLANTEL_REQUERIDO", message: "Selecciona un plantel." });
@@ -203,6 +243,10 @@ router.get("/alumnos", async (req, res) => {
       WHERE a.IdPlantel = ?
         AND a.Status IN ('activo', 'en formación')
     `;
+    if (esMaestro(req)) {
+      sql += " AND a.IdGrupo = ? AND g.IdMaestroTitular = ? AND COALESCE(g.EsExtraHelp, 0) = 0";
+      params.push(idGrupo, req.auth.id_usuario);
+    }
     if (q) {
       sql += " AND CONCAT_WS(' ', a.Nombre, a.Apellidos) LIKE ?";
       params.push(`%${q}%`);
@@ -248,6 +292,15 @@ router.post("/", async (req, res) => {
     if (!grupo || String(grupo.Status || "").trim().toLowerCase() !== "activo") {
       const error = new Error("GRUPO_NO_DISPONIBLE"); error.status = 404; throw error;
     }
+    if (!validarGrupoMaestro(req, grupo)) {
+      const error = new Error("GRUPO_NO_AUTORIZADO"); error.status = 403; throw error;
+    }
+    if (esMaestro(req) && fecha !== fechaHoyMexico()) {
+      const error = new Error("FECHA_NO_AUTORIZADA"); error.status = 403; throw error;
+    }
+    if (esMaestro(req) && idMaestroQueDioClase !== String(req.auth.id_usuario)) {
+      const error = new Error("MAESTRO_NO_AUTORIZADO"); error.status = 403; throw error;
+    }
     if (!fechaValidaParaGrupo(grupo, fecha)) {
       const error = new Error("DIA_NO_VALIDO"); error.status = 409; throw error;
     }
@@ -256,7 +309,12 @@ router.post("/", async (req, res) => {
     if (duracion === null) {
       const error = new Error("HORARIO_INVALIDO"); error.status = 409; throw error;
     }
-    const pago = Math.round((cuota * duracion) * 100) / 100;
+    // La cuota se muestra en el cliente, pero el cálculo del maestro siempre usa GRUPOS.
+    const cuotaAplicada = esMaestro(req) ? Number(grupo.CuotaHora) : cuota;
+    if (!Number.isFinite(cuotaAplicada) || cuotaAplicada < 0) {
+      const error = new Error("CUOTA_INVALIDA"); error.status = 400; throw error;
+    }
+    const pago = Math.round((cuotaAplicada * duracion) * 100) / 100;
 
     if (curso) {
       const [cursoRows] = await connection.query(
@@ -274,6 +332,9 @@ router.post("/", async (req, res) => {
 
     const idsAlumnos = [...new Set(alumnos.map((a) => String(a.id_alumno || "").trim()).filter(Boolean))];
     let alumnosDb = [];
+    if (esMaestro(req) && idsAlumnos.length !== alumnos.length) {
+      const error = new Error("ALUMNOS_INVALIDOS"); error.status = 400; throw error;
+    }
     if (idsAlumnos.length) {
       const placeholders = idsAlumnos.map(() => "?").join(",");
       const [rows] = await connection.query(
@@ -318,7 +379,7 @@ router.post("/", async (req, res) => {
         curso,
         capitulo,
         pagina,
-        cuota,
+        cuotaAplicada,
         duracion,
         pago,
         sustitucion
@@ -374,6 +435,10 @@ router.post("/", async (req, res) => {
 
     const mensajes = {
       GRUPO_NO_DISPONIBLE: "El grupo no está disponible.",
+      GRUPO_NO_AUTORIZADO: "Sólo puedes registrar asistencia de tus grupos regulares.",
+      FECHA_NO_AUTORIZADA: "El maestro sólo puede registrar la fecha actual.",
+      MAESTRO_NO_AUTORIZADO: "El maestro debe registrar la clase a su propio nombre.",
+      CUOTA_INVALIDA: "No se encontró una cuota válida para el grupo.",
       DIA_NO_VALIDO: "Este no es un día válido para el grupo seleccionado.",
       HORARIO_INVALIDO: "El horario del grupo no permite calcular la duración.",
       CURSO_INVALIDO: "Selecciona un curso válido.",
