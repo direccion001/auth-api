@@ -232,10 +232,12 @@ router.get("/contexto", async (req, res) => {
     ]);
 
     const fechaValida = fecha ? fechaValidaParaGrupo(grupo, fecha) : true;
-    const idAsistencia = fecha ? `${idGrupo}-${fecha.replace(/-/g, "")}` : null;
     let yaRegistrada = false;
-    if (idAsistencia) {
-      const [rows] = await pool.query("SELECT 1 FROM ASISTENCIAS WHERE IdAsistencia = ? LIMIT 1", [idAsistencia]);
+    if (fecha) {
+      const [rows] = await pool.query(
+        "SELECT 1 FROM ASISTENCIAS WHERE IdGrupo = ? AND FechaClase = ? LIMIT 1",
+        [idGrupo, fecha]
+      );
       yaRegistrada = rows.length > 0;
     }
 
