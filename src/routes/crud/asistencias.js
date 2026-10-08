@@ -443,6 +443,15 @@ router.post("/", async (req, res) => {
       alumnosDb = rows;
     }
 
+    // Evita duplicados aunque una asistencia histórica no use el IdAsistencia estándar.
+    const [existentes] = await connection.query(
+      "SELECT IdInterno FROM ASISTENCIAS WHERE IdGrupo = ? AND FechaClase = ? LIMIT 1 FOR UPDATE",
+      [idGrupo, fecha]
+    );
+    if (existentes.length) {
+      const error = new Error("ASISTENCIA_YA_REGISTRADA"); error.status = 409; throw error;
+    }
+
     const idInterno = crypto.randomUUID();
     const idAsistencia = `${idGrupo}-${fecha.replace(/-/g, "")}`;
     const sustitucion = String(idMaestroQueDioClase) === String(grupo.IdMaestroTitular || "") ? 0 : 1;
@@ -541,6 +550,7 @@ router.post("/", async (req, res) => {
       FECHA_NO_AUTORIZADA: "No registraste esta asistencia a tiempo. Comunícate con Administración.",
       AGENDA_REQUERIDA: "Selecciona una clase pendiente de hoy para registrar asistencia.",
       AGENDA_NO_AUTORIZADA: "Este pendiente ya no está disponible o no corresponde al grupo y la fecha.",
+      ASISTENCIA_YA_REGISTRADA: "Ya existe una asistencia registrada para este grupo y fecha.",
       JUSTIFICACION_NO_AUTORIZADA: "Los maestros no pueden justificar faltas.",
       MOTIVO_JUSTIFICACION_INVALIDO: "Selecciona un motivo de justificación válido.",
       MAESTRO_NO_AUTORIZADO: "El maestro debe registrar la clase a su propio nombre.",
