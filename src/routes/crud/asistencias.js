@@ -327,6 +327,7 @@ router.get("/alumnos", async (req, res) => {
   const idPlantel = String(req.query.id_plantel || "").trim();
   const idGrupo = String(req.query.id_grupo || "").trim();
   const q = String(req.query.q || "").trim();
+  const soloActivos = String(req.query.solo_activos || "") === "1";
 
   if (esMaestro(req)) {
     if (!idGrupo) {
@@ -365,6 +366,7 @@ router.get("/alumnos", async (req, res) => {
       sql += " AND a.IdGrupo = ? AND g.IdMaestroTitular = ? AND COALESCE(g.EsExtraHelp, 0) = 0";
       params.push(idGrupo, req.auth.id_usuario);
     }
+    if (soloActivos) sql += " AND a.Status = 'activo'";
     if (q) {
       sql += " AND CONCAT_WS(' ', a.Nombre, a.Apellidos) LIKE ?";
       params.push(`%${q}%`);
@@ -416,6 +418,9 @@ router.post("/", async (req, res) => {
     }
     if (!validarGrupoMaestro(req, grupo)) {
       const error = new Error("GRUPO_NO_AUTORIZADO"); error.status = 403; throw error;
+    }
+    if (Number(grupo.EsExtraHelp || 0) === 1 && !alumnos.length) {
+      const error = new Error("ALUMNOS_REQUERIDOS"); error.status = 409; throw error;
     }
     if (esMaestro(req) && fecha !== fechaHoyMexico()) {
       const error = new Error("FECHA_NO_AUTORIZADA"); error.status = 403; throw error;
@@ -478,7 +483,7 @@ router.post("/", async (req, res) => {
 
     const idsAlumnos = [...new Set(alumnos.map((a) => String(a.id_alumno || "").trim()).filter(Boolean))];
     let alumnosDb = [];
-    if (esMaestro(req) && idsAlumnos.length !== alumnos.length) {
+    if ((esMaestro(req) || Number(grupo.EsExtraHelp || 0) === 1) && idsAlumnos.length !== alumnos.length) {
       const error = new Error("ALUMNOS_INVALIDOS"); error.status = 400; throw error;
     }
     if (idsAlumnos.length) {
@@ -488,7 +493,7 @@ router.post("/", async (req, res) => {
          FROM ALUMNOS
          WHERE IdAlumno IN (${placeholders})
            AND IdPlantel = ?
-           AND Status IN ('activo', 'en formación')`,
+           AND Status ${Number(grupo.EsExtraHelp || 0) === 1 ? "= 'activo'" : "IN ('activo', 'en formación')"}`,
         [...idsAlumnos, grupo.IdPlantel]
       );
       if (rows.length !== idsAlumnos.length) {
@@ -626,6 +631,7 @@ router.post("/", async (req, res) => {
       HORARIO_INVALIDO: "El horario del grupo no permite calcular la duración.",
       CURSO_INVALIDO: "Selecciona un curso válido.",
       CAPITULO_INVALIDO: "El capítulo está fuera del rango del curso.",
+      ALUMNOS_REQUERIDOS: "Agrega al menos un alumno a Extra Help.",
       ALUMNOS_INVALIDOS: "Uno o más alumnos no están disponibles.",
       ALUMNOS_FUERA_DE_GRUPO: "Uno o más alumnos no pertenecen al grupo regular.",
       ALUMNOS_INCOMPLETOS: "Debes registrar la asistencia de todos los alumnos actuales del grupo.",
