@@ -44,12 +44,44 @@ async function requireAuth(req, res, next) {
         throw new Error("POLITICA_INVALIDA");
       }
 
+      // Permisos dinámicos solo para planteles; el catálogo no amplía los roles actuales.
+      let modulosPlantel;
+      try {
+        const [permisosPlantel] = await pool.query(
+          `
+          SELECT pm.id_modulo
+          FROM plantel_modulos pm
+          INNER JOIN modulos m ON m.id_modulo = pm.id_modulo
+          WHERE pm.id_plantel = ?
+            AND pm.habilitado = 1
+            AND m.activo = 1
+          `,
+          [rows[0].id_plantel]
+        );
+
+        const habilitados = new Set(permisosPlantel.map((permiso) => permiso.id_modulo));
+        modulosPlantel = politica.modulos.filter((modulo) => habilitados.has(modulo));
+      } catch (error) {
+        console.error("[AUTH] Error consultando permisos del plantel", {
+          id_plantel: rows[0].id_plantel,
+          code: error?.code,
+          message: error?.message
+        });
+
+        // No convertir una falla de SQL en 401: el frontend cerraría la sesión.
+        return res.status(503).json({
+          ok: false,
+          code: "PERMISOS_NO_DISPONIBLES",
+          message: "No pudimos validar tus permisos en este momento."
+        });
+      }
+
       req.auth = {
         tipo_usuario: "PLANTEL",
         id_plantel: rows[0].id_plantel,
         alcance: politica.alcance,
         acceso_global: politica.acceso_global,
-        modulos: politica.modulos,
+        modulos: modulosPlantel,
         capacidades: politica.capacidades
       };
 
