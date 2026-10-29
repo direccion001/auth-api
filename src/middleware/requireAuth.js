@@ -68,7 +68,7 @@ async function requireAuth(req, res, next) {
           message: error?.message
         });
 
-        // No convertir una falla de SQL en 401: el frontend cerraría la sesión.
+        // Un fallo de consulta SQL no equivale a una sesión inválida.
         return res.status(503).json({
           ok: false,
           code: "PERMISOS_NO_DISPONIBLES",
